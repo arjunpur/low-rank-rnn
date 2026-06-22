@@ -1,0 +1,16 @@
+# LaTeX build byproducts
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+
+# Temporary render previews
+tmp/
+
+# Local Python environment
+.venv/
+
+# macOS metadata
+.DS_Store

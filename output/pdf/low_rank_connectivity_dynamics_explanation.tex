@@ -1,0 +1,313 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{titlesec}
+
+\definecolor{accent}{RGB}{32,89,120}
+\definecolor{muted}{RGB}{93,99,106}
+
+\titleformat{\section}
+  {\large\bfseries\color{accent}}
+  {\thesection}{0.6em}{}
+\titleformat{\subsection}
+  {\normalsize\bfseries}
+  {\thesubsection}{0.6em}{}
+
+\setlist[itemize]{leftmargin=1.4em, itemsep=0.2em, topsep=0.3em}
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\vx}{\mathbf{x}}
+\newcommand{\vu}{\mathbf{u}}
+\newcommand{\vphi}{\boldsymbol{\phi}}
+\newcommand{\vm}{\mathbf{m}}
+\newcommand{\vn}{\mathbf{n}}
+\newcommand{\vI}{\mathbf{I}}
+\newcommand{\vw}{\mathbf{w}}
+
+\title{\vspace{-1.2cm}Low-rank Connectivity and the Dynamics It Produces}
+\author{A short note on the framework used by Dubreuil et al. (2022)}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-0.8cm}
+
+\section{The starting point: a recurrent neural network}
+
+The paper studies firing-rate recurrent neural networks. A common continuous-time
+form is
+\begin{equation}
+  \tau \frac{d x_i}{dt}
+  =
+  -x_i
+  +
+  \sum_{j=1}^{N} J_{ij}\,\phi(x_j)
+  +
+  \sum_{s=1}^{N_{\mathrm{in}}} I_i^{(s)} u_s(t),
+  \label{eq:rnn_component}
+\end{equation}
+where:
+\begin{itemize}
+  \item $x_i(t)$ is the activation of neuron $i$;
+  \item $\phi(x_i)$ is its firing rate after a static nonlinearity;
+  \item $J_{ij}$ is the recurrent weight from neuron $j$ to neuron $i$;
+  \item $u_s(t)$ are external inputs, such as stimulus or context signals;
+  \item $I_i^{(s)}$ is the input weight from input channel $s$ to neuron $i$.
+\end{itemize}
+
+In vector form,
+\begin{equation}
+  \tau \dot{\vx}
+  =
+  -\vx + J\phi(\vx) + \sum_s \vI^{(s)}u_s(t).
+\end{equation}
+A completely general $N \times N$ recurrent matrix $J$ can have rank as large as
+$N$. Such a matrix can create many independent recurrent feedback directions.
+The low-rank assumption sharply restricts this.
+
+\section{What ``low rank'' means}
+
+A rank-$R$ recurrent connectivity matrix can be written as a sum of $R$ outer
+products:
+\begin{equation}
+  J
+  =
+  \frac{1}{N}
+  \sum_{r=1}^{R} \vm^{(r)} \left(\vn^{(r)}\right)^{\top},
+  \label{eq:lowrank_matrix}
+\end{equation}
+or componentwise,
+\begin{equation}
+  J_{ij}
+  =
+  \frac{1}{N}
+  \sum_{r=1}^{R} m_i^{(r)} n_j^{(r)}.
+\end{equation}
+
+Each term has two population-length vectors:
+\begin{itemize}
+  \item $\vn^{(r)}$ is a \emph{read-in} or \emph{selection} vector. It defines
+  which population activity pattern is measured.
+  \item $\vm^{(r)}$ is a \emph{write-out} vector. It defines which pattern of
+  recurrent input is sent back into the neurons.
+\end{itemize}
+
+For rank one,
+\begin{equation}
+  J = \frac{1}{N}\vm\vn^\top,
+\end{equation}
+so recurrent processing has a simple form:
+\begin{equation}
+  J\phi(\vx)
+  =
+  \vm
+  \left(
+    \frac{1}{N}\vn^\top \phi(\vx)
+  \right).
+\end{equation}
+The network first projects the current firing rates onto $\vn$, producing one
+scalar, and then feeds that scalar back along $\vm$.
+
+\section{The latent variable}
+
+The scalar produced by the projection is the key low-dimensional variable:
+\begin{equation}
+  \kappa(t)
+  =
+  \frac{1}{N}
+  \sum_{j=1}^{N} n_j \phi(x_j(t)).
+  \label{eq:kappa_rank_one}
+\end{equation}
+For rank one, the recurrent input to neuron $i$ is simply
+\begin{equation}
+  m_i \kappa(t).
+\end{equation}
+Thus the full $N$-dimensional network is not using an arbitrary recurrent input
+pattern. Its recurrent input always lies along the single population direction
+$\vm$. For rank $R$, there are $R$ such latent variables:
+\begin{equation}
+  \kappa_r(t)
+  =
+  \frac{1}{N}
+  \sum_{j=1}^{N} n_j^{(r)} \phi(x_j(t)),
+  \qquad r=1,\ldots,R.
+\end{equation}
+The recurrent input is then
+\begin{equation}
+  J\phi(\vx)
+  =
+  \sum_{r=1}^{R} \vm^{(r)}\kappa_r(t).
+  \label{eq:recurrent_low_dim}
+\end{equation}
+
+This is the main mathematical reason low-rank networks are interpretable: the
+large neural population can be described through a small set of recurrent latent
+variables $\kappa_1,\ldots,\kappa_R$.
+
+\section{Why low-rank connectivity creates low-dimensional dynamics}
+
+Insert the low-rank form into the RNN:
+\begin{equation}
+  \tau \dot{\vx}
+  =
+  -\vx
+  +
+  \sum_{r=1}^{R} \vm^{(r)}\kappa_r(t)
+  +
+  \sum_s \vI^{(s)}u_s(t).
+  \label{eq:low_dim_state}
+\end{equation}
+This equation says that changes in the neural state are built only from:
+\begin{itemize}
+  \item the recurrent directions $\vm^{(1)},\ldots,\vm^{(R)}$;
+  \item the input directions $\vI^{(1)},\ldots,\vI^{(N_{\mathrm{in}})}$;
+  \item the leak term $-\vx$.
+\end{itemize}
+
+If the initial state is in the subspace spanned by the recurrent and input
+directions, it stays there. Even when the full network has thousands of neurons,
+the meaningful trajectories can live in a much smaller subspace. This is what the
+paper means by reducing the network to latent dynamics.
+
+\section{A rank-one example}
+
+With one input $u(t)$ and rank-one recurrent connectivity,
+\begin{equation}
+  \tau \dot{x}_i
+  =
+  -x_i + m_i \kappa(t) + I_i u(t),
+\end{equation}
+\begin{equation}
+  \kappa(t)
+  =
+  \frac{1}{N}
+  \sum_j n_j \phi(x_j(t)).
+\end{equation}
+
+If $\phi$ were linear, the latent dynamics would be approximately
+\begin{equation}
+  \tau \dot{\kappa}
+  =
+  -\kappa
+  +
+  \sigma_{nm}\kappa
+  +
+  \sigma_{nI}u(t),
+  \label{eq:linear_kappa}
+\end{equation}
+where
+\begin{equation}
+  \sigma_{nm} = \frac{1}{N}\sum_i n_i m_i,
+  \qquad
+  \sigma_{nI} = \frac{1}{N}\sum_i n_i I_i.
+\end{equation}
+
+These overlaps control the computation:
+\begin{itemize}
+  \item $\sigma_{nI}$ says how strongly the input drives the latent variable;
+  \item $\sigma_{nm}$ says how strongly the latent variable feeds back onto itself.
+\end{itemize}
+If feedback is weak, $\kappa$ tracks the input briefly. If feedback is tuned close
+to the leak, $\kappa$ can integrate information over time. If the nonlinearity is
+strong and feedback is positive, the same low-dimensional system can support
+attractor-like decision states.
+
+\section{Where population structure enters}
+
+The paper then asks: what statistics of the neuron-specific parameters are needed
+for a task? For each neuron, collect its coordinates in connectivity space:
+\begin{equation}
+  \left(
+    m_i^{(1)},\ldots,m_i^{(R)},
+    n_i^{(1)},\ldots,n_i^{(R)},
+    I_i^{(1)},\ldots,I_i^{(N_{\mathrm{in}})},
+    w_i
+  \right).
+\end{equation}
+Across neurons, these coordinates form a distribution.
+
+\subsection*{Single random population}
+
+In a fully random population structure, these neuron coordinates are modeled as
+draws from one joint distribution, often a multivariate Gaussian:
+\begin{equation}
+  \mathbf{a}_i \sim \mathcal{N}(0,\Sigma).
+\end{equation}
+The effective latent dynamics are governed by global covariances such as
+$\sigma_{nm}$ and $\sigma_{nI}$. There are no distinct groups of neurons with
+different computational roles.
+
+\subsection*{Multiple subpopulations}
+
+In a non-random population structure, the coordinates are better described as a
+mixture:
+\begin{equation}
+  p(\mathbf{a})
+  =
+  \sum_{p=1}^{P}
+  \alpha_p \mathcal{N}(\mu_p,\Sigma_p).
+\end{equation}
+Each component corresponds to a subpopulation. The subpopulations can have
+different covariances, so the same input may modulate one group strongly and
+another weakly.
+
+In the nonlinear case, this is crucial. Dubreuil et al. write the effective couplings
+as population-weighted quantities of the form
+\begin{equation}
+  \widetilde{\sigma}_{ab}
+  =
+  \sum_p
+  \alpha_p
+  \sigma_{ab}^{(p)}
+  \langle \phi' \rangle_p.
+\end{equation}
+Here $\langle \phi' \rangle_p$ is the gain of subpopulation $p$. Inputs can change
+these gains differently across subpopulations. This lets context reshape the
+effective latent dynamics without necessarily driving the same latent variable
+directly.
+
+\section{The computational message}
+
+Low rank controls the \emph{dimension} of the recurrent dynamics. A rank-$R$
+network has $R$ main recurrent latent variables.
+
+Population structure controls how inputs, feedback, and readout are arranged
+across neurons. A single random population can implement many tasks by using
+low-dimensional dynamics. But tasks requiring flexible input-output remapping can
+require multiple subpopulations, because different groups need to have different
+gain modulations and different effective roles.
+
+In one sentence:
+
+\begin{quote}
+Low-rank connectivity says the network computes through a small number of
+collective variables; non-random population structure says different neurons are
+organized so that inputs can flexibly reshape the dynamics of those collective
+variables.
+\end{quote}
+
+\section*{Glossary}
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+Term & Meaning \\
+\midrule
+$J$ & recurrent connectivity matrix \\
+rank $R$ & number of independent recurrent feedback directions \\
+$\vn^{(r)}$ & vector that reads population activity into latent variable $r$ \\
+$\vm^{(r)}$ & vector that writes latent variable $r$ back into the population \\
+$\kappa_r$ & low-dimensional recurrent latent variable \\
+$\vI^{(s)}$ & input vector for input channel $s$ \\
+$\vw$ & readout vector for producing the network output \\
+population structure & distribution of neuron coordinates in connectivity space \\
+\bottomrule
+\end{tabular}
+
+\end{document}
