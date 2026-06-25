@@ -7,29 +7,21 @@ from collections.abc import Sequence
 import numpy as np
 import numpy.typing as npt
 
-DT_MS = 20
-DEFAULT_TRIAL_LENGTH = 50_000 // DT_MS
-
-STIMULUS_STRENGTH_PREFAC = 3.2 / 100
-STIMULUS_STRENGTHS = np.concatenate(
-    [
-        2 ** np.arange(5) * STIMULUS_STRENGTH_PREFAC,
-        -2 ** np.arange(5) * STIMULUS_STRENGTH_PREFAC,
-    ]
+from low_rank_rnn.constants import (
+    NOISE_MEAN,
+    NOISE_STD,
+    STIMULUS_STRENGTHS,
+    STIMULUS_WINDOW,
+    TRIAL_LENGTH,
 )
-STIMULUS_WINDOW_MS = (5_000, 45_000)
-
-NOISE_MEAN = 0.0
-NOISE_STD = 0.03
 
 
 def generate_perceptual_decision_making_trials(
     num_trials: int,
-    trial_length: int = DEFAULT_TRIAL_LENGTH,
+    trial_length: int = TRIAL_LENGTH,
     *,
-    dt_ms: int = DT_MS,
     stimulus_strengths: npt.ArrayLike = STIMULUS_STRENGTHS,
-    stimulus_window_ms: Sequence[int] = STIMULUS_WINDOW_MS,
+    stimulus_window: Sequence[int] = STIMULUS_WINDOW,
     noise_mean: float = NOISE_MEAN,
     noise_std: float = NOISE_STD,
     rng: np.random.Generator | None = None,
@@ -37,11 +29,10 @@ def generate_perceptual_decision_making_trials(
     """Generate noisy input trials and signed choice labels.
 
     Each trial is Gaussian noise with a constant signed stimulus added during
-    ``stimulus_window_ms``. Labels are the sign of the sampled stimulus
-    strength: ``+1`` for right and ``-1`` for left.
+    ``stimulus_window`` (inclusive start and end time steps). Labels are the
+    sign of the sampled stimulus strength: ``+1`` for right and ``-1`` for left.
     """
-    window_start = int(stimulus_window_ms[0] / dt_ms)
-    window_end = int(stimulus_window_ms[1] / dt_ms)
+    window_start, window_end = stimulus_window
 
     generator = rng if rng is not None else np.random.default_rng()
     strengths = np.asarray(stimulus_strengths, dtype=float)
