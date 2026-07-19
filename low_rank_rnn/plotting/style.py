@@ -20,6 +20,23 @@ COLORS = {
 }
 PALETTE = tuple(COLORS.values())
 
+# Semantic colors shared by every choice-conditioned trajectory plot.
+CHOICE_COLORS = {
+    -1: COLORS["blue"],
+    1: COLORS["red"],
+}
+
+# A separate diverging palette keeps covariance sign distinct from choice.
+COVARIANCE_COLORS = {
+    "negative": "#542788",
+    "neutral": "#F7F7F7",
+    "positive": "#B35806",
+}
+COVARIANCE_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
+    "covariance",
+    tuple(COVARIANCE_COLORS.values()),
+)
+
 
 STYLE = {
     # Canvas and typography

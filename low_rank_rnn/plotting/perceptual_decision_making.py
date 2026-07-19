@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 
 from low_rank_rnn.constants import STIMULUS_WINDOW
+from low_rank_rnn.plotting.style import CHOICE_COLORS
 
 
 def plot_first_perceptual_decision_making_trials(
@@ -30,7 +31,8 @@ def plot_first_perceptual_decision_making_trials(
     axes = axes.ravel()
 
     for i, ax in enumerate(axes):
-        ax.plot(time_steps, data_array[i], lw=0.8)
+        choice_color = CHOICE_COLORS[int(np.sign(labels_array[i]))]
+        ax.plot(time_steps, data_array[i], color=choice_color, lw=0.8)
         ax.axvspan(t0, t1, color="gray", alpha=0.12)
         direction = "right (+1)" if labels_array[i] > 0 else "left (-1)"
         ax.set_ylabel(f"trial {i}\n{direction}")
