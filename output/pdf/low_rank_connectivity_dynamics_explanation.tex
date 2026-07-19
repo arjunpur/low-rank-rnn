@@ -972,6 +972,721 @@ That is the core of the assignment: implement this recurrence correctly,
 generate outputs over time, define a task loss, and let PyTorch's autograd tune
 the two low-rank connectivity vectors.
 
+\section{Connectivity space: what it is and how the paper analyzes it}
+
+The paper uses two complementary views of the same low-rank network.
+
+The first view is \emph{activity state space}. This is the familiar
+$N$-dimensional space whose coordinates are the neural activities
+$x_1,\ldots,x_N$. A trajectory in this space is the population activity evolving
+over time.
+
+The second view is \emph{connectivity space}, also called \emph{loading space}
+in the paper. This is not the space of activities. It is the space of
+neuron-specific parameters. Each neuron is represented by one point whose
+coordinates are that neuron's entries in the input, recurrent, and readout
+patterns.
+
+For a network with $N_{\mathrm{in}}$ input patterns, one readout pattern, and
+rank $R$ recurrent connectivity, neuron $i$ has coordinates
+\begin{equation}
+  \mathbf{a}_i
+  =
+  \left(
+    I_i^{(1)},\ldots,I_i^{(N_{\mathrm{in}})},
+    n_i^{(1)},m_i^{(1)},\ldots,n_i^{(R)},m_i^{(R)},
+    w_i
+  \right).
+  \label{eq:loading_vector_general}
+\end{equation}
+So the loading-space dimension is
+\[
+  N_{\mathrm{in}} + 2R + 1
+\]
+when there is one readout. In the assignment's rank-one, one-input model, each
+neuron is just a point in a four-dimensional space:
+\begin{equation}
+  \mathbf{a}_i = (I_i,n_i,m_i,w_i).
+  \label{eq:loading_vector_rank_one}
+\end{equation}
+
+This representation is useful because a trained low-rank RNN is not only a list
+of vectors $\vI,\vn,\vm,\vw$. It is also a cloud of $N$ points
+$\mathbf{a}_1,\ldots,\mathbf{a}_N$ in loading space. The shape of that cloud
+describes how input drive, recurrent selection, recurrent feedback, and output
+readout are statistically arranged across neurons.
+
+\subsection{The same vectors have two different interpretations}
+
+The columns and rows of the connectivity-pattern matrix answer different
+questions.
+
+As \emph{columns}, the patterns $\vI$, $\vm$, $\vn$, and $\vw$ are directions
+across the neural population. For example, $\vm$ is a direction in activity
+state space: when the latent variable $\kappa$ is positive, recurrent feedback
+pushes the state along $\vm$.
+
+As \emph{rows}, the same numbers define one coordinate vector per neuron. For
+rank one,
+\[
+  \begin{array}{c}
+  \text{neuron }1\\
+  \text{neuron }2\\
+  \vdots\\
+  \text{neuron }N
+  \end{array}
+  \left[
+  \begin{array}{cccc}
+  I_1 & n_1 & m_1 & w_1\\
+  I_2 & n_2 & m_2 & w_2\\
+  \vdots & \vdots & \vdots & \vdots\\
+  I_N & n_N & m_N & w_N
+  \end{array}
+  \right].
+\]
+Each row is one point in connectivity space. Each column is one population
+pattern.
+
+This is the central duality in the figures from the paper:
+\begin{itemize}
+  \item activity state space explains \emph{where the neural trajectory can go};
+  \item connectivity space explains \emph{why the reduced trajectory has the
+  particular inputs, feedback loops, and readout it has}.
+\end{itemize}
+
+\subsection{From a point cloud to covariances}
+
+The paper's main simplification is that, for large networks, the exact identity
+of every neuron is less important than the distribution of points in loading
+space. A common assumption is that the points are sampled from a Gaussian
+distribution:
+\begin{equation}
+  \mathbf{a}_i \sim \mathcal{N}(0,\Sigma).
+  \label{eq:single_loading_gaussian}
+\end{equation}
+The covariance matrix $\Sigma$ summarizes the shape and orientation of the point
+cloud. Its entries are pattern overlaps:
+\begin{equation}
+  \sigma_{ab}
+  =
+  \frac{1}{N}\sum_{i=1}^{N} a_i b_i,
+  \label{eq:pattern_covariance}
+\end{equation}
+where $a$ and $b$ can be $I$, $n$, $m$, $w$, or one of their indexed versions.
+For example,
+\[
+  \sigma_{nI} = \frac{1}{N}\sum_i n_i I_i,
+  \qquad
+  \sigma_{nm} = \frac{1}{N}\sum_i n_i m_i,
+  \qquad
+  \sigma_{mw} = \frac{1}{N}\sum_i m_i w_i.
+\]
+
+These covariances are exactly the quantities that appeared earlier in the
+rank-one latent dynamics. The connectivity-space view explains why: a covariance
+is a geometric feature of the loading cloud, and the reduced dynamics are
+controlled by those geometric features.
+
+Pairwise scatterplots are two-dimensional projections of this loading-space
+cloud. If the scatterplot of $n_i$ against $I_i$ has a strong positive tilt, then
+neurons with positive input weights also tend to have positive $n$ loadings. The
+input is therefore read efficiently into $\kappa$. If the scatterplot of $n_i$
+against $m_i$ has a positive tilt, then the activity written out along $\vm$ is
+read back in by $\vn$, creating positive recurrent feedback on $\kappa$.
+
+\subsection{Why covariances become an effective circuit}
+
+For rank one with one input,
+\[
+  \tau \dot{\vx}
+  =
+  -\vx + \vm\widehat{\kappa} + \vI u(t),
+  \qquad
+  \widehat{\kappa} = \frac{1}{N}\vn^\top\phi(\vx).
+\]
+Because $\vx$ is driven only along $\vm$ and $\vI$, the activity can be described
+by low-dimensional coordinates. To derive their dynamics carefully, distinguish
+the rate projection $\widehat{\kappa}(t)$ from the coefficient $\kappa(t)$ of
+the state along $\vm$. Also let
+$v(t)$ be the filtered input, $\tau\dot v=-v+u$. Then a state in the
+low-dimensional subspace has the form
+\begin{equation}
+  x_i(t) = m_i\kappa(t) + I_i v(t).
+  \label{eq:rank_one_state_coordinates}
+\end{equation}
+This form is exact when the initial condition lies in the span of $\vm$ and
+$\vI$; components outside that span receive no recurrent or external drive and
+decay through the leak.
+
+Differentiate this expression and substitute it into the full neural equation:
+\[
+  m_i\tau\dot\kappa + I_i\tau\dot v
+  =
+  -m_i\kappa-I_i v+m_i\widehat{\kappa}+I_i u.
+\]
+Using $\tau\dot v=-v+u$ and matching the coefficient of $m_i$ gives
+$\tau\dot\kappa=-\kappa+\widehat{\kappa}$. Inserting the rate projection then
+closes the dynamics:
+\begin{equation}
+  \tau \dot{\kappa}
+  =
+  -\kappa
+  +
+  \frac{1}{N}\sum_i n_i\,
+  \phi\!\left(m_i\kappa + I_i v(t)\right).
+  \label{eq:rank_one_mean_field_sum}
+\end{equation}
+Thus the term $-\kappa$ is inherited from the single-neuron leak, while the
+summation is the recurrent rate pattern read out by $\vn$. The state coordinate
+$\kappa$ and the rate projection $\widehat{\kappa}$ are equal at a fixed point,
+but need not be equal during a transient. They are often both denoted by
+$\kappa$ when that distinction is not important. Below, we also return to the
+common shorthand of writing $u$ for the filtered input coordinate $v$; for a
+constant or slowly varying input, $v$ simply follows $u$.
+
+Mean-field theory is the large-population step that turns this empirical average
+over a particular set of neurons into an average over a statistical population.
+If the loading vectors $\mathbf{a}_i$ are independent samples from
+$p(\mathbf{a})$, then the law of large numbers gives
+\[
+  \frac{1}{N}\sum_i f(\mathbf{a}_i)
+  \longrightarrow
+  \int f(\mathbf{a})p(\mathbf{a})\,d\mathbf{a}
+  =
+  \mathbb{E}_{p}[f(\mathbf{a})]
+\]
+as $N$ becomes large. Here
+$f(\mathbf{a})=n\phi(m\kappa+Iu)$, so the finite-network equation becomes
+\begin{equation}
+  \tau \dot{\kappa}
+  =
+  -\kappa
+  +
+  \mathbb{E}_{(I,n,m,w)\sim p(\mathbf{a})}
+  \left[
+    n\,\phi(m\kappa + Iu)
+  \right].
+  \label{eq:rank_one_mean_field_expectation}
+\end{equation}
+This replacement does not assume that all neurons have the mean loading or the
+mean activity. It keeps their heterogeneity through the joint distribution of
+$I,n,m,$ and $w$; it only removes the dependence on the identity of each finite
+sample. The approximation becomes self-averaging: two sufficiently large
+networks drawn from the same $p(\mathbf{a})$ have nearly the same latent
+dynamics.
+
+For a zero-mean Gaussian loading distribution, $p(\mathbf{a})$ is completely
+specified by its covariance matrix. To see how its entries enter, set
+$h=m\kappa+Iu$. Gaussian integration by parts gives
+\begin{equation}
+  \mathbb{E}\!\left[n\phi(h)\right]
+  =
+  \left(\sigma_{nm}\kappa+\sigma_{nI}u\right)
+  \underbrace{\mathbb{E}\!\left[\phi'(h)\right]}_{g(\kappa,u)},
+  \label{eq:rank_one_gaussian_mean_field}
+\end{equation}
+where $g(\kappa,u)$ is the average neural gain. Thus the covariances determine
+the available input and feedback pathways, while the nonlinearity changes their
+instantaneous strength through $g$. For $\tanh$, this gain decreases as more
+neurons saturate. If the loading distribution is not Gaussian, higher-order
+features of $p(\mathbf{a})$ can matter as well, so covariances alone need not
+determine the dynamics.
+
+If activity is close to the linear regime of $\tanh$, then
+$g(\kappa,u)\approx 1$ (equivalently,
+$\phi(m\kappa + Iu) \approx m\kappa + Iu$), and
+\begin{equation}
+  \tau \dot{\kappa}
+  \approx
+  -\kappa
+  +
+  \sigma_{nm}\kappa
+  +
+  \sigma_{nI}u.
+  \label{eq:rank_one_linear_covariance}
+\end{equation}
+The readout has the analogous approximation
+\begin{equation}
+  z(t)
+  =
+  \frac{1}{N}\sum_i w_i\phi(x_i)
+  \approx
+  \sigma_{wm}\kappa + \sigma_{wI}u.
+  \label{eq:rank_one_readout_covariance}
+\end{equation}
+
+So, in the simplest rank-one case:
+\begin{itemize}
+  \item $\sigma_{nI}$ controls how strongly the input enters the latent variable;
+  \item $\sigma_{nm}$ controls recurrent feedback and therefore the integration
+  timescale;
+  \item $\sigma_{wm}$ controls how strongly the latent variable is visible in
+  the output.
+\end{itemize}
+
+For rank $R$, the same idea becomes a small recurrent circuit with variables
+$\kappa_1,\ldots,\kappa_R$:
+\begin{equation}
+  \tau \dot{\kappa}_r
+  =
+  -\kappa_r
+  +
+  \mathbb{E}
+  \left[
+    n^{(r)}
+    \phi\!\left(
+      \sum_{q=1}^{R}m^{(q)}\kappa_q
+      +
+      \sum_s I^{(s)}u_s
+    \right)
+  \right].
+  \label{eq:rank_R_mean_field_expectation}
+\end{equation}
+In the linear regime, the effective coupling from $\kappa_q$ to $\kappa_r$ is
+set by $\sigma_{n^{(r)}m^{(q)}}$, and the drive from input $u_s$ into
+$\kappa_r$ is set by $\sigma_{n^{(r)}I^{(s)}}$. This is why the paper draws the
+reduced system as an effective circuit: each collective variable is like a unit,
+and the covariances in connectivity space become the couplings between those
+units.
+
+\subsection{Mean-field theory and the equivalent-circuit task}
+
+The previous subsection gives the compact mean-field equation. This subsection
+unpacks what that approximation does and how to use it for the assignment. For
+clarity, we keep the filtered input coordinate $v$ explicit rather than replacing
+it by $u$.
+
+\paragraph{Step 1: start from the finite trained network.}
+For a particular set of trained loading vectors, the rank-one latent dynamics are
+\begin{equation}
+  \tau\dot\kappa
+  =
+  -\kappa
+  +
+  \frac{1}{N}\sum_{i=1}^{N}
+  n_i\phi(h_i),
+  \qquad
+  h_i=m_i\kappa+I_i v,
+  \label{eq:mf_task_finite}
+\end{equation}
+coupled to $\tau\dot v=-v+u$. The quantity $h_i$ is the total low-dimensional
+input current to neuron $i$. Neurons differ because their coordinates $m_i$ and
+$I_i$ differ, even though all of them share the same macroscopic variables
+$\kappa$ and $v$.
+
+Mean-field theory does \emph{not} replace every neuron by an average neuron. It
+replaces the average of many heterogeneous neurons by an expectation over the
+distribution from which their loadings are drawn:
+\[
+  \frac{1}{N}\sum_i n_i\phi(h_i)
+  \longrightarrow
+  \mathbb{E}\!\left[n\phi(h)\right].
+\]
+The individual variation remains inside this expectation. What disappears is
+the dependence on the identity of a particular finite sample of neurons.
+
+\paragraph{Step 2: find the distribution of neural inputs.}
+Assume the loading coordinates $(m,n,I,w)$ are jointly zero-mean Gaussian. For
+fixed $\kappa$ and $v$,
+\[
+  h=m\kappa+Iv
+\]
+is then Gaussian as well. Its variance is
+\begin{equation}
+  \Delta^2(\kappa,v)
+  =
+  \sigma_m^2\kappa^2
+  +
+  \sigma_I^2v^2
+  +
+  2\sigma_{mI}\kappa v.
+  \label{eq:mf_task_delta_general}
+\end{equation}
+Here $\sigma_m^2=\mathbb{E}[m^2]$, $\sigma_I^2=\mathbb{E}[I^2]$, and
+$\sigma_{mI}=\mathbb{E}[mI]$. If $\vm$ and $\vI$ are orthogonal in the
+large-population sense, then $\sigma_{mI}=0$ and
+\begin{equation}
+  \Delta
+  =
+  \sqrt{\sigma_m^2\kappa^2+\sigma_I^2v^2}.
+  \label{eq:mf_task_delta_orthogonal}
+\end{equation}
+Thus $h$ can be represented as $h=\Delta z$ with
+$z\sim\mathcal{N}(0,1)$. Intuitively, $\Delta$ measures how widely the neurons
+are spread across the nonlinear activation function at the current state.
+
+\paragraph{Step 3: average the neuronal gain.}
+The local slope $\phi'(h)$ measures how responsive a neuron is to a small change
+in its input. Its population average is
+\begin{equation}
+  g(\Delta)
+  =
+  \left\langle\phi'\right\rangle(\Delta)
+  =
+  \frac{1}{\sqrt{2\pi}}
+  \int_{-\infty}^{\infty}
+  \phi'(\Delta z)e^{-z^2/2}\,dz.
+  \label{eq:mf_task_gain}
+\end{equation}
+For $\phi=\tanh$, $\phi'(h)=\operatorname{sech}^2(h)$. When $\Delta$ is small,
+most neurons are near the high-gain center of $\tanh$ and $g(\Delta)\approx1$.
+When $\Delta$ is large, more neurons are saturated and $g(\Delta)$ decreases.
+This single scalar is how the mean-field circuit retains the effect of the
+nonlinearity.
+
+\paragraph{Step 4: turn loading covariances into effective couplings.}
+Because $n$ and $h$ are jointly Gaussian, Gaussian integration by parts gives
+\begin{align}
+  \mathbb{E}\!\left[n\phi(h)\right]
+  &=
+  \operatorname{Cov}(n,h)\,
+  \mathbb{E}\!\left[\phi'(h)\right]
+  \notag\\
+  &=
+  \left(\sigma_{nm}\kappa+\sigma_{nI}v\right)g(\Delta).
+  \label{eq:mf_task_stein}
+\end{align}
+The two terms have a direct circuit interpretation. The input is written along
+$\vI$ and read by $\vn$, so $\sigma_{nI}$ sets the input-to-latent pathway.
+The latent state is written along $\vm$ and read back by $\vn$, so
+$\sigma_{nm}$ sets the recurrent feedback loop. The nonlinearity multiplies
+both pathways by the current population gain.
+
+Define the state-dependent effective couplings
+\begin{equation}
+  \widetilde{\sigma}_{ab}(\kappa,v)
+  =
+  \sigma_{ab}g\!\left(\Delta(\kappa,v)\right).
+  \label{eq:mf_task_effective_covariance}
+\end{equation}
+The equivalent circuit is then
+\begin{equation}
+  \boxed{
+  \begin{aligned}
+    \tau\dot v
+    &= -v+u,\\
+    \tau\dot\kappa
+    &= -\kappa
+       +g(\Delta)\left(\sigma_{nm}\kappa+\sigma_{nI}v\right).
+  \end{aligned}}
+  \label{eq:mf_task_system}
+\end{equation}
+It is called one-dimensional because there is one \emph{recurrent} internal
+variable, $\kappa$. Formally, the augmented system also contains $v$, but $v$ is
+only an input filter: it is determined by $u$ and receives no feedback from
+$\kappa$.
+
+The readout follows from the same calculation:
+\begin{equation}
+  z_{\mathrm{MF}}
+  =
+  \mathbb{E}\!\left[w\phi(h)\right]
+  =
+  g(\Delta)\left(\sigma_{wm}\kappa+\sigma_{wI}v\right).
+  \label{eq:mf_task_output}
+\end{equation}
+Thus $\sigma_{wm}$ makes the latent decision variable visible to the output,
+while $\sigma_{wI}$ describes any direct input-to-output pathway.
+
+\paragraph{What the assignment is asking you to test.}
+The goal is not merely to integrate another differential equation. It is to test
+whether a handful of loading-space statistics preserve the computation learned
+by the full network. A useful sequence is:
+\begin{enumerate}
+  \item \textbf{Extract the trained statistics.} Inspect the empirical loading
+  means and compute $\sigma_{nm}$, $\sigma_{nI}$, $\sigma_{wm}$,
+  $\sigma_{wI}$, $\sigma_m^2$, $\sigma_I^2$, and $\sigma_{mI}$. The formulas
+  above assume zero means. Centering is appropriate when testing that model; if
+  the trained means are appreciable, record them because a mean-field model that
+  discards them is testing a different loading distribution.
+
+  \item \textbf{Check the finite-sum reduction first.} Simulate
+  Eq.~\eqref{eq:mf_task_finite} with the actual trained loadings. If this does
+  not track the full RNN, first check the coordinate normalization, initial
+  condition, integration step, and the assumption that activity is confined to
+  the span of $\vm$ and $\vI$.
+
+  \item \textbf{Simulate the Gaussian mean-field circuit.} For the same input
+  $u(t)$ and time step as the full RNN, update $v$ and $\kappa$ using
+  Eq.~\eqref{eq:mf_task_system}. At every step, recompute $\Delta$ and evaluate
+  $g(\Delta)$ by numerical quadrature, a precomputed lookup table, or Gaussian
+  samples.
+
+  \item \textbf{Reconstruct behavior.} Use Eq.~\eqref{eq:mf_task_output} to
+  obtain the mean-field output. Apply the same decision rule used for the full
+  network, such as the sign of the final output, and compare accuracy,
+  psychometric curves, latent trajectories, and output trajectories.
+
+  \item \textbf{Diagnose any mismatch.} If the finite-sum model succeeds but
+  the Gaussian mean-field model fails, the one-Gaussian loading description is
+  probably missing structure, or finite-size effects are important. If both
+  reduced models fail, the issue is more likely the coordinate reduction or its
+  normalization. The paper's supplied covariance values are a useful reference
+  circuit, but reproducing them is not a substitute for diagnosing the trained
+  network. Before treating supplied numbers as entries of a Gaussian covariance
+  matrix, match the paper's scaling convention and verify that the matrix is
+  positive semidefinite; in particular,
+  $|\sigma_{ab}|\leq\sigma_a\sigma_b$ must hold.
+\end{enumerate}
+
+For intuition, the full network and the mean-field circuit sit at three levels:
+\[
+  \begin{array}{c}
+  \text{trained neurons}\;(I_i,n_i,m_i,w_i)
+  \\[0.5em]
+  \Downarrow\;\text{average over the loading cloud}
+  \\[0.5em]
+  \text{covariances}\;\sigma_{nI},\sigma_{nm},\sigma_{wm},\ldots
+  \\[0.5em]
+  \Downarrow\;\text{multiply by the current gain }g(\Delta)
+  \\[0.5em]
+  \text{effective input, feedback, and readout couplings.}
+  \end{array}
+\]
+Low rank says that only one recurrent coordinate must be followed. The Gaussian
+mean-field assumption says that the cloud of individual neurons can be replaced
+by its covariance geometry. The gain $g(\Delta)$ then tells us how much of that
+geometric coupling is currently usable rather than lost to saturation.
+
+\paragraph{Normalization convention.}
+Throughout this note, $\kappa$ is the coefficient in
+$\vx=\vm\kappa+\vI v$. If $\vm\perp\vI$, this coefficient is
+\begin{equation}
+  \kappa
+  =
+  \frac{\vm^\top\vx}{\lVert\vm\rVert^2}.
+  \label{eq:mf_task_kappa_coefficient}
+\end{equation}
+Some presentations instead use
+$\vm^\top\vx/\lVert\vm\rVert$, the projection length along the unit vector
+$\vm/\lVert\vm\rVert$. Both conventions are valid, but their numerical
+$\kappa$ values differ by a factor of $\lVert\vm\rVert$, so the state
+decomposition and covariance factors must be rescaled consistently. Likewise,
+Eq.~\eqref{eq:mf_task_delta_orthogonal} contains $v$, not the raw input $u$,
+unless one explicitly makes the slow-input approximation $v\approx u$.
+
+\subsection{Single population versus multiple populations}
+
+A single Gaussian cloud means all neurons are samples from one statistical
+population:
+\[
+  p(\mathbf{a}) = \mathcal{N}(0,\Sigma).
+\]
+This can already implement many computations. Increasing the rank $R$ increases
+the number of internal variables $\kappa_r$, so the network has more internal
+degrees of freedom.
+
+The paper then asks a separate question: when is one cloud not enough? To answer
+this, it allows a mixture of $P$ Gaussian populations:
+\begin{equation}
+  p(\mathbf{a})
+  =
+  \sum_{p=1}^{P}
+  \alpha_p \mathcal{N}(0,\Sigma_p).
+  \label{eq:mixture_loading_gaussian}
+\end{equation}
+Here $\alpha_p$ is the fraction of neurons in population $p$, and $\Sigma_p$ is
+that population's covariance matrix. The clusters are centered at the origin in
+the paper's model, so what distinguishes populations is not their mean activity
+or mean loading. What distinguishes them is their covariance structure: different
+subpopulations can have different relationships between input, recurrent, and
+readout patterns.
+
+With multiple populations, the mean-field equation becomes
+\begin{equation}
+  \tau \dot{\kappa}_r
+  =
+  -\kappa_r
+  +
+  \sum_{p=1}^{P}\alpha_p
+  \mathbb{E}_{\mathbf{a}\sim\mathcal{N}(0,\Sigma_p)}
+  \left[
+    n^{(r)}
+    \phi\!\left(
+      \sum_q m^{(q)}\kappa_q
+      +
+      \sum_s I^{(s)}u_s
+    \right)
+  \right].
+  \label{eq:population_mean_field}
+\end{equation}
+Nonlinearity makes this more powerful than just averaging covariance matrices.
+The gain $\phi'(x_i)$ can be different in different subpopulations, because an
+input can push one subpopulation into a high-gain regime and another into a
+low-gain or saturated regime. In a local linearization, the effective covariance
+has the form
+\begin{equation}
+  \widetilde{\sigma}_{ab}
+  =
+  \sum_{p=1}^{P}
+  \alpha_p
+  \sigma_{ab}^{(p)}
+  \langle \phi' \rangle_p.
+  \label{eq:gain_weighted_covariance}
+\end{equation}
+The same anatomical connectivity can therefore have different effective
+low-dimensional couplings depending on which subpopulations are active and what
+their gains are.
+
+This is the paper's distinction between rank and population structure:
+\begin{itemize}
+  \item $R$ controls how many internal collective variables are available;
+  \item $P$ controls how many statistically distinct neuron groups shape the
+  dynamics of those variables.
+\end{itemize}
+
+\subsection{The paper's analysis pipeline}
+
+The paper analyzes trained networks with the following logic.
+
+\begin{enumerate}
+  \item \textbf{Train low-rank RNNs on a task.} For each behavioral task, the
+  authors search for a minimal recurrent rank $R$ that can solve it.
+
+  \item \textbf{Build the loading matrix.} Each neuron becomes one row, with
+  columns given by its input, recurrent, and readout loadings. For example, with
+  one input, one readout, and two recurrent modes, the loading space has six
+  coordinates:
+  \[
+    (I_i,n_i^{(1)},m_i^{(1)},n_i^{(2)},m_i^{(2)},w_i).
+  \]
+
+  \item \textbf{Fit clusters in loading space.} The authors fit Gaussian
+  clusters to the cloud of neuron loadings. They progressively increase the
+  number of clusters $P$.
+
+  \item \textbf{Estimate each cluster's covariance structure.} For every fitted
+  population, they compute the covariance matrix between patterns. This matrix
+  is the compact summary of that population's connectivity geometry.
+
+  \item \textbf{Resample networks from the fitted distribution.} They generate
+  new networks by sampling neurons from the fitted Gaussian population or mixture
+  of populations. If the resampled networks solve the task as well as the
+  original trained networks, then the fitted connectivity-space statistics have
+  captured the essential computational structure.
+
+  \item \textbf{Find the minimal number of populations.} The minimal $P$ is the
+  smallest number of clusters whose resampled networks still perform the task.
+
+  \item \textbf{Use mean-field theory to identify key parameters.} Once the
+  relevant covariances are known, the paper builds reduced low-dimensional
+  models that keep only the important covariance entries. This reveals the
+  mechanism in terms of input drive, recurrent feedback, coupling between
+  latent variables, and readout.
+\end{enumerate}
+
+The important methodological point is that clustering is not used merely for
+visualization. It is tested causally by resampling: if a simplified
+connectivity-space distribution can regenerate networks with the same behavior,
+then that distribution is a valid reduced description of the trained network.
+
+\subsection{How the task examples fit the framework}
+
+The screenshots summarize the paper's minimal rank and minimal population
+counts:
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Task & Minimal rank & Minimal populations \\
+\midrule
+Perceptual decision making & $R=1$ & $P=1$ \\
+Multi-sensory decision making & $R=1$ & $P=1$ \\
+Parametric working memory & $R=2$ & $P=1$ \\
+Context-dependent decision making & $R=1$ & $P=2$ \\
+Delay-match-to-sample with two items & $R=2$ & $P=2$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For perceptual decision making, the network has one input, one readout, and one
+recurrent mode, so the loading space is four-dimensional: $(I,n,m,w)$. A single
+Gaussian population is enough. The key covariances have direct interpretations:
+\begin{itemize}
+  \item $I$-$n$ covariance determines how stimulus input drives $\kappa$;
+  \item $n$-$m$ covariance determines positive feedback and integration;
+  \item $m$-$w$ covariance determines how $\kappa$ drives the readout.
+\end{itemize}
+This is the cleanest example of the connectivity-space idea: a four-dimensional
+point cloud, summarized by a few covariances, becomes a one-dimensional
+integrator.
+
+For parametric working memory, the network needs $R=2$. The loading space has
+six dimensions: one input, one readout, and two pairs of recurrent patterns. The
+paper finds that one population is still enough, but the covariance structure now
+creates two different internal variables. One mode has strong positive feedback,
+so it can maintain the first stimulus through a delay. The other mode is more
+transient and represents stimulus information without the same persistent
+feedback. The readout combines the two output directions to compute a difference
+between the two stimulus values.
+
+For context-dependent decision making, increasing rank alone is not the key
+move. A rank-one network can solve the task, but it needs two populations. The
+reason is that context-dependent computations require the same inputs and latent
+variable to be routed differently depending on context. Distinct subpopulations
+allow context inputs to modulate gains and effective covariances differently in
+different groups of neurons. This changes the effective circuit without needing
+many more recurrent dimensions.
+
+For delay-match-to-sample with two items, the paper reports that both extra
+rank and extra population structure are needed: $R=2$ and $P=2$. In this kind of
+task, the network needs multiple internal variables and population-specific
+organization to compare items flexibly.
+
+\subsection{How to analyze connectivity space in your rank-one model}
+
+After training the assignment model, the direct analogue of the paper's analysis
+is to form the $N \times 4$ loading matrix
+\[
+  A =
+  \left[
+  \begin{array}{cccc}
+  I_1 & n_1 & m_1 & w_1\\
+  I_2 & n_2 & m_2 & w_2\\
+  \vdots & \vdots & \vdots & \vdots\\
+  I_N & n_N & m_N & w_N
+  \end{array}
+  \right].
+\]
+Then inspect the covariance matrix
+\[
+  \Sigma = \frac{1}{N}A^\top A
+\]
+after centering columns if their empirical means are not close to zero. The
+entries to look at first are:
+\begin{itemize}
+  \item $\Sigma_{I,n}$: input-to-latent drive;
+  \item $\Sigma_{n,m}$: recurrent feedback on the latent variable;
+  \item $\Sigma_{m,w}$: latent-to-output readout alignment;
+  \item $\Sigma_{I,w}$: direct input visibility in the readout, if present.
+\end{itemize}
+
+A minimal PyTorch diagnostic is:
+\begin{lstlisting}[style=python]
+with torch.no_grad():
+    A = torch.stack([model.I, model.n, model.m, model.w], dim=1)
+    A = A - A.mean(dim=0, keepdim=True)
+    Sigma = A.T @ A / A.shape[0]
+
+print(Sigma)
+\end{lstlisting}
+
+The scatterplots that correspond to the paper's loading-space projections are
+just pairwise plots of the columns of $A$: $I$ versus $n$, $n$ versus $m$, $m$
+versus $w$, and so on. These plots are not only descriptive. They tell you which
+statistical relationships training created. If the trained network integrates
+evidence, you should expect the learned $\vn$ and $\vm$ to create recurrent
+feedback, and the learned $\vn$ to align with the fixed input direction enough
+for stimulus information to enter $\kappa$.
+
+\subsection{The main takeaway}
+
+Connectivity space is the paper's way of turning a large trained network into a
+small statistical object. Low rank gives the network a small number of latent
+variables. The loading-space distribution tells us how the neurons arrange
+input, recurrent, and readout weights so those latent variables perform a task.
+The covariance matrix of the loading cloud then becomes the parameter matrix of
+an effective low-dimensional circuit.
+
 \section*{Glossary}
 
 \begin{tabular}{@{}ll@{}}
