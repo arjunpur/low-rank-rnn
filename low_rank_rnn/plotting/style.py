@@ -25,6 +25,10 @@ CHOICE_COLORS = {
     -1: COLORS["blue"],
     1: COLORS["red"],
 }
+MEAN_CHOICE_COLORS = {
+    -1: "#114477",
+    1: "#CC3344",
+}
 
 # A separate diverging palette keeps covariance sign distinct from choice.
 COVARIANCE_COLORS = {

@@ -34,8 +34,15 @@ def train_model(
     batch_size: int = 32,
     learning_rate: float = 5e-3,
     decision_steps: int = 15,
+    log_every: int | None = 100,
 ) -> list[float]:
-    """Train a model and return the mean loss from each epoch."""
+    """Train a model and return the mean loss from each epoch.
+
+    Set ``log_every`` to ``None`` to disable progress logging.
+    """
+    if log_every is not None and log_every <= 0:
+        raise ValueError("log_every must be positive or None")
+
     dataset = TensorDataset(inputs, labels)
     batches = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -55,7 +62,21 @@ def train_model(
 
         epoch_loss = total_loss / len(dataset)
         losses.append(epoch_loss)
-        print(f"Epoch {len(losses)}: loss={epoch_loss:.6f}")
+        epoch_number = len(losses)
+        should_log = log_every is not None and (
+            epoch_number % log_every == 0 or epoch_number == epochs
+        )
+        if should_log:
+            accuracy = decision_accuracy(
+                model,
+                inputs,
+                labels,
+                decision_steps=decision_steps,
+            )
+            print(
+                f"Epoch {epoch_number}: "
+                f"loss={epoch_loss:.6f}, accuracy={accuracy:.1%}"
+            )
 
     return losses
 

@@ -1,4 +1,4 @@
-"""Plots for rank-one RNN outputs and dynamics."""
+"""Plots for low-rank RNN outputs and dynamics."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 import numpy as np
 import numpy.typing as npt
 
@@ -15,7 +16,97 @@ from low_rank_rnn.plotting.style import (
     COLORS,
     COVARIANCE_CMAP,
     COVARIANCE_COLORS,
+    MEAN_CHOICE_COLORS,
 )
+
+
+def plot_accuracy_comparison(
+    trained_accuracy: float,
+    sampled_accuracies: npt.ArrayLike,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Compare one trained network with Gaussian-sampled networks."""
+    sampled_accuracies = np.asarray(sampled_accuracies, dtype=float)
+    sample_positions = np.linspace(0.86, 1.14, len(sampled_accuracies))
+    sampled_mean = float(sampled_accuracies.mean())
+
+    fig, axis = plt.subplots(figsize=(6.4, 4.2))
+    axis.scatter(
+        0,
+        trained_accuracy,
+        color=COLORS["green"],
+        marker="D",
+        s=80,
+        zorder=3,
+    )
+    axis.scatter(
+        sample_positions,
+        sampled_accuracies,
+        color=COLORS["purple"],
+        edgecolor="white",
+        linewidth=0.6,
+        s=65,
+        zorder=3,
+    )
+    axis.axhline(
+        trained_accuracy,
+        color=COLORS["green"],
+        linestyle="--",
+        linewidth=1.2,
+        label=f"trained network: {trained_accuracy:.1%}",
+    )
+    axis.hlines(
+        sampled_mean,
+        0.82,
+        1.18,
+        color=COLORS["purple"],
+        linewidth=2.2,
+        label=f"sample mean: {sampled_mean:.1%}",
+    )
+    axis.axhline(
+        0.5,
+        color=COLORS["gray"],
+        linestyle=":",
+        linewidth=1.0,
+        label="chance: 50%",
+    )
+
+    axis.set_xticks((0, 1), labels=("Trained network", "Gaussian samples"))
+    axis.set_xlim(-0.35, 1.35)
+    axis.set_ylim(0, 1.03)
+    axis.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axis.set_ylabel("Decision accuracy")
+    axis.set_title("Held-out perceptual decision performance")
+    axis.legend(loc="lower left")
+    fig.tight_layout()
+    return fig, axis
+
+
+def plot_reduced_system_accuracy(
+    trained_accuracy: float,
+    reduced_accuracy: float,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Compare the trained RNN and its reduced-system accuracy."""
+    fig, axis = plt.subplots(figsize=(5.2, 4.2))
+    axis.bar(
+        ("Trained RNN", "1D system"),
+        (trained_accuracy, reduced_accuracy),
+        color=(COLORS["green"], COLORS["purple"]),
+        width=0.6,
+    )
+    axis.axhline(
+        0.5,
+        color=COLORS["gray"],
+        linestyle=":",
+        linewidth=1.0,
+        label="chance: 50%",
+    )
+    axis.set_ylim(0, 1.03)
+    axis.yaxis.set_major_formatter(PercentFormatter(1.0))
+    axis.set_ylabel("Decision accuracy")
+    axis.set_title("Held-out perceptual decision performance")
+    axis.legend(loc="lower left")
+    fig.tight_layout()
+    return fig, axis
 
 
 def plot_trial_outputs(
@@ -104,18 +195,34 @@ def _add_covariance_ellipse(
 
 def plot_connectivity_pairs(
     vectors: Mapping[str, npt.ArrayLike],
+    *,
+    row_names: Sequence[str],
+    column_names: Sequence[str],
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Plot the six unique pairs of rank-one connectivity vectors."""
-    row_names = ("I", "n", "m")
-    column_names = ("n", "m", "w")
-    fig, axes = plt.subplots(3, 3, figsize=(9, 9))
+    """Plot the requested unique pairs of connectivity vectors."""
+    row_names = tuple(row_names)
+    column_names = tuple(column_names)
+    if not row_names or not column_names:
+        raise ValueError("row_names and column_names must not be empty")
+
+    fig, axes = plt.subplots(
+        len(row_names),
+        len(column_names),
+        figsize=(3 * len(column_names), 3 * len(row_names)),
+        squeeze=False,
+    )
 
     for axis in axes.flat:
         axis.set_visible(False)
 
+    plotted_pairs: set[frozenset[str]] = set()
     for row, y_name in enumerate(row_names):
-        for column in range(row, len(column_names)):
-            x_name = column_names[column]
+        for column, x_name in enumerate(column_names):
+            pair = frozenset((x_name, y_name))
+            if len(pair) < 2 or pair in plotted_pairs:
+                continue
+            plotted_pairs.add(pair)
+
             x = np.asarray(vectors[x_name])
             y = np.asarray(vectors[y_name])
             axis = axes[row, column]
@@ -143,7 +250,7 @@ def plot_connectivity_pairs(
             axis.set_ylabel(y_name, loc="top", rotation=0)
             axis.set_title(f"{x_name}–{y_name}\nCov = {covariance:.3f}")
 
-    fig.suptitle("Upper-triangular connectivity-space covariance")
+    fig.suptitle("Connectivity-space covariance")
     fig.tight_layout(rect=[0, 0, 1, 0.96])
     return fig, axes
 
@@ -152,7 +259,7 @@ def plot_connectivity_covariance(
     names: Sequence[str],
     covariance: npt.ArrayLike,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Plot the six unique cross-covariances as a triangular heat map."""
+    """Plot unique cross-covariances as a triangular heat map."""
     names = tuple(names)
     covariance = np.asarray(covariance)
     pair_covariances = covariance[:-1, 1:]
@@ -184,7 +291,7 @@ def plot_connectivity_covariance(
             axis.text(
                 column,
                 row,
-                rf"$\sigma_{{{first_name}{second_name}}}$",
+                rf"$\mathrm{{Cov}}({first_name}, {second_name})$",
                 ha="center",
                 va="center",
                 color=text_color,
@@ -216,6 +323,30 @@ def activity_trajectory_limits(
     return (-float(x_limit), float(x_limit)), (-float(y_limit), float(y_limit))
 
 
+def _style_activity_trajectory_axis(
+    axis: plt.Axes,
+    projected_states: npt.ArrayLike,
+) -> None:
+    """Style a two-dimensional activity trajectory axis."""
+    x_limits, y_limits = activity_trajectory_limits(projected_states)
+    axis.set_xlim(*x_limits)
+    axis.set_ylim(*y_limits)
+    axis.spines["left"].set_position(("data", 0))
+    axis.spines["bottom"].set_position(("data", 0))
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
+    axis.xaxis.set_major_locator(MaxNLocator(nbins=4))
+    axis.yaxis.set_major_locator(MaxNLocator(nbins=4))
+    axis.tick_params(labelsize=8)
+    axis.grid(False)
+    axis.set_xlabel(r"activity along $m$")
+    axis.xaxis.set_label_coords(1, -0.04)
+    axis.xaxis.label.set_horizontalalignment("right")
+    axis.set_ylabel(r"activity along $I_\perp$")
+    axis.yaxis.set_label_coords(-0.04, 1)
+    axis.yaxis.label.set_horizontalalignment("right")
+
+
 def plot_activity_trajectories(
     projected_states: npt.ArrayLike,
     labels: npt.ArrayLike,
@@ -234,12 +365,13 @@ def plot_activity_trajectories(
             axis.plot(trajectory[:, 0], trajectory[:, 1], color=color, alpha=0.25)
 
         mean_trajectory = trajectories.mean(axis=0)
+        mean_color = MEAN_CHOICE_COLORS[choice]
         axis.plot(
             mean_trajectory[:, 0],
             mean_trajectory[:, 1],
-            color=color,
+            color=mean_color,
             linewidth=3,
-            label=f"choice {choice:+d}",
+            label=f"mean choice {choice:+d}",
         )
         arrow_times = np.arange(0, len(mean_trajectory) - 1, 8)
         steps = np.diff(mean_trajectory, axis=0)
@@ -248,24 +380,64 @@ def plot_activity_trajectories(
             mean_trajectory[arrow_times, 1],
             steps[arrow_times, 0],
             steps[arrow_times, 1],
-            color=color,
+            color=mean_color,
             angles="xy",
             scale_units="xy",
             scale=1,
             width=0.004,
         )
-        axis.scatter(*mean_trajectory[0], color=color, marker="o", s=70)
-        axis.scatter(*mean_trajectory[-1], color=color, marker="X", s=90)
+        axis.scatter(*mean_trajectory[0], color=mean_color, marker="o", s=70)
+        axis.scatter(*mean_trajectory[-1], color=mean_color, marker="X", s=90)
 
-    axis.axhline(0, color="0.85", linewidth=0.8)
-    axis.axvline(0, color="0.85", linewidth=0.8)
-    axis.set_xlabel(r"activity along $m$")
-    axis.set_ylabel(r"activity along $I_\perp$")
+    _style_activity_trajectory_axis(axis, projected_states)
     axis.set_title("Population activity trajectories in the $m$–$I$ plane")
     axis.legend(title="circle: start, X: end")
-    x_limits, y_limits = activity_trajectory_limits(projected_states)
-    axis.set_xlim(*x_limits)
-    axis.set_ylim(*y_limits)
     axis.set_aspect("auto")
     fig.tight_layout()
+    return fig, axis
+
+
+def plot_activity_trajectories_by_stimulus(
+    projected_states: npt.ArrayLike,
+    mean_stimuli: npt.ArrayLike,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot activity trajectories colored by mean stimulus."""
+    projected_states = np.asarray(projected_states)
+    mean_stimuli = np.asarray(mean_stimuli)
+    stimulus_limit = max(float(np.max(np.abs(mean_stimuli))), 1e-12)
+    stimulus_norm = plt.Normalize(-stimulus_limit, stimulus_limit)
+    stimulus_cmap = plt.get_cmap("coolwarm")
+
+    fig, axis = plt.subplots(figsize=(8, 7))
+    for trajectory, mean_stimulus in zip(projected_states, mean_stimuli):
+        axis.plot(
+            trajectory[:, 0],
+            trajectory[:, 1],
+            color=stimulus_cmap(stimulus_norm(mean_stimulus)),
+            alpha=0.4,
+        )
+
+    _style_activity_trajectory_axis(axis, projected_states)
+    colorbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=stimulus_norm, cmap=stimulus_cmap),
+        ax=axis,
+    )
+    colorbar.set_label(r"mean stimulus, $\bar{u}$")
+    axis.set_title("Activity trajectories colored by mean stimulus")
+    fig.tight_layout()
+    return fig, axis
+
+
+def plot_reduced_system_trajectories(
+    trajectories: npt.ArrayLike,
+    mean_stimuli: npt.ArrayLike,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot reduced-system trajectories in the kappa-v plane."""
+    fig, axis = plot_activity_trajectories_by_stimulus(
+        trajectories,
+        mean_stimuli,
+    )
+    axis.set_xlabel(r"latent state, $\kappa$")
+    axis.set_ylabel(r"filtered input, $v$")
+    axis.set_title("Equivalent one-dimensional system trajectories")
     return fig, axis
