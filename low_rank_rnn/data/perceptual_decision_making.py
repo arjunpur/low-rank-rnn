@@ -1,12 +1,12 @@
 """Generate trials for a perceptual decision making task."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
+from jaxtyping import Float, Integer
 
+from low_rank_rnn._typing import typechecked
 from low_rank_rnn.constants import (
     NOISE_MEAN,
     NOISE_STD,
@@ -16,6 +16,7 @@ from low_rank_rnn.constants import (
 )
 
 
+@typechecked
 def generate_perceptual_decision_making_trials(
     num_trials: int,
     trial_length: int = TRIAL_LENGTH,
@@ -25,7 +26,10 @@ def generate_perceptual_decision_making_trials(
     noise_mean: float = NOISE_MEAN,
     noise_std: float = NOISE_STD,
     rng: np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[
+    Float[np.ndarray, "trial time"],
+    Integer[np.ndarray, "trial"],
+]:
     """Generate noisy input trials and signed choice labels.
 
     Each trial is Gaussian noise with a constant signed stimulus added during

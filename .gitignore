@@ -6,11 +6,15 @@
 *.out
 *.synctex.gz
 
+# Note whose PDF lives in the knowledge base, not this repo
+output/pdf/oscillator_vs_line_attractor.tex
+
 # Temporary render previews
 tmp/
 
 # Local Python environment
 .venv/
+.trickle/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/

@@ -1,17 +1,31 @@
 """Numerical analysis of trained low-rank RNNs."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 
 import numpy as np
 import numpy.typing as npt
 import torch
+from jaxtyping import Complex, Float
 
+from low_rank_rnn._typing import typechecked
+from low_rank_rnn.data.variable_delay import (
+    DELAYS,
+    FIXATION_STEPS,
+    FREQUENCIES,
+    MAX_FREQUENCY,
+    MIN_FREQUENCY,
+    STIMULUS_STEPS,
+    frequency_pair_grid,
+    make_trials,
+)
 from low_rank_rnn.model import LowRankRNN
+from low_rank_rnn.training import masked_decision_loss
 
 
-def connectivity_vectors(model: LowRankRNN) -> dict[str, np.ndarray]:
+@typechecked
+def connectivity_vectors(
+    model: LowRankRNN,
+) -> dict[str, Float[np.ndarray, "unit"]]:
     """Return each neuron's coordinates in connectivity space."""
     rank = model.m.shape[1]
     suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
@@ -28,18 +42,23 @@ def connectivity_vectors(model: LowRankRNN) -> dict[str, np.ndarray]:
     return vectors
 
 
+@typechecked
 def connectivity_covariance(
     vectors: Mapping[str, npt.ArrayLike],
-) -> tuple[tuple[str, ...], np.ndarray]:
+) -> tuple[tuple[str, ...], Float[np.ndarray, "vector vector"]]:
     """Return names and sample covariance of connectivity vectors."""
     names = tuple(vectors)
     matrix = np.stack([vectors[name] for name in names])
     return names, np.cov(matrix)
 
 
+@typechecked
 def fit_loading_gaussian(
     vectors: Mapping[str, npt.ArrayLike],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[
+    Float[np.ndarray, "coordinate"],
+    Float[np.ndarray, "coordinate coordinate"],
+]:
     """Fit a Gaussian to neuron coordinates in loading space."""
     samples = np.column_stack(tuple(vectors.values()))
     mean = samples.mean(axis=0)
@@ -47,13 +66,14 @@ def fit_loading_gaussian(
     return mean, covariance
 
 
+@typechecked
 def sample_loading_gaussian(
     mean: npt.ArrayLike,
     covariance: npt.ArrayLike,
     *,
     num_samples: int,
     rng: np.random.Generator | None = None,
-) -> np.ndarray:
+) -> Float[np.ndarray, "sample coordinate"]:
     """Draw loading vectors from a fitted Gaussian."""
     generator = rng if rng is not None else np.random.default_rng()
     return generator.multivariate_normal(
@@ -98,27 +118,116 @@ def sample_rank_one_rnns(
     return networks
 
 
-def project_rank_one_activity(
-    states: torch.Tensor,
+@torch.no_grad()
+@typechecked
+def delay_eigenvalues(
     model: LowRankRNN,
-) -> np.ndarray:
+    coordinates: Float[torch.Tensor, "state rank"],
+) -> Complex[np.ndarray, "state rank"]:
+    """Linearize the autonomous latent flow at each memory state.
+
+    Eigenvalues are in units of ``1 / tau`` and sorted by decreasing real part,
+    so the leading mode comes first: a line attractor holds it near zero, while
+    a nonzero imaginary part means the memory rotates.
+    """
+    eigenvalues = []
+    identity = torch.eye(model.m.shape[1])
+    for coordinate in coordinates:
+        gain = 1 - torch.tanh(model.m @ coordinate).square()
+        jacobian = model.n.T @ (gain[:, None] * model.m) / model.n_units - identity
+        values = torch.linalg.eigvals(jacobian)
+        eigenvalues.append(values[torch.argsort(-values.real)])
+    return torch.stack(eigenvalues).cpu().numpy()
+
+
+@torch.no_grad()
+@typechecked
+def delay_diagnostics(
+    model: LowRankRNN,
+    *,
+    probe_delays: npt.ArrayLike = DELAYS[::5],
+) -> dict[str, np.ndarray]:
+    """Summarize how a trained network holds its memory across the delay.
+
+    Sweeps ``f_1`` with a neutral ``f_2`` to read the memory states off the
+    delay period, then reports their trajectory, the task error over a grid of
+    frequency pairs at each probe delay, how far the states drift relative to
+    the span of the memory manifold, and the local spectrum.
+    """
+    probe_delays = np.asarray(probe_delays)
+    neutral_frequency = (MIN_FREQUENCY + MAX_FREQUENCY) / 2
+    sweep_frequencies = np.column_stack(
+        (FREQUENCIES, np.full_like(FREQUENCIES, neutral_frequency))
+    )
+    sweep_inputs, _, _ = make_trials(
+        sweep_frequencies,
+        np.full(len(FREQUENCIES), DELAYS.max()),
+    )
+
+    _, states = model(sweep_inputs)
+    coordinates = states @ torch.linalg.pinv(model.m).T
+    delay_start = FIXATION_STEPS + STIMULUS_STEPS
+    memory_coordinates = coordinates[:, delay_start : delay_start + DELAYS.max() + 1]
+
+    pairs = frequency_pair_grid()
+    probe_mse = []
+    for delay in probe_delays:
+        inputs, targets, decision_mask = make_trials(pairs, np.full(len(pairs), delay))
+        outputs, _ = model(inputs)
+        probe_mse.append(masked_decision_loss(outputs, targets, decision_mask).item())
+
+    reference = DELAYS.min()
+    manifold_span = torch.linalg.vector_norm(
+        memory_coordinates[-1, reference] - memory_coordinates[0, reference]
+    )
+    drift = torch.linalg.vector_norm(
+        memory_coordinates[:, probe_delays] - memory_coordinates[:, reference, None],
+        dim=-1,
+    ).mean(dim=0) / manifold_span
+
+    # How much of the initial f_1 separation survives, in units of its value at
+    # delay onset. Latent coordinates carry no absolute scale, so this is the
+    # comparable measure of whether a network still holds the stimulus.
+    probed = memory_coordinates[:, probe_delays]
+    onset_span = torch.linalg.vector_norm(
+        memory_coordinates[-1, 0] - memory_coordinates[0, 0]
+    )
+    retained_span = (
+        torch.linalg.vector_norm(probed[-1] - probed[0], dim=-1) / onset_span
+    )
+
+    return {
+        "memory_coordinates": memory_coordinates.cpu().numpy(),
+        "probe_mse": np.asarray(probe_mse),
+        "fractional_drift": drift.cpu().numpy(),
+        "retained_span": retained_span.cpu().numpy(),
+        "eigenvalues": delay_eigenvalues(model, memory_coordinates[:, DELAYS.max()]),
+        "overlap": (model.n.T @ model.m / model.n_units).cpu().numpy(),
+    }
+
+
+@typechecked
+def project_rank_one_activity(
+    states: Float[torch.Tensor, "batch time unit"],
+    model: LowRankRNN,
+) -> Float[np.ndarray, "batch time 2"]:
     """Project rank-one activity onto orthonormal ``m`` and ``I`` axes."""
     if model.m.shape[1] != 1:
         raise ValueError("model must have rank 1")
 
-    recurrent_vector = model.m[:, 0].detach()
+    m_vector = model.m[:, 0].detach()
     input_vector = model.I.detach()
 
-    recurrent_norm = torch.linalg.vector_norm(recurrent_vector)
-    if torch.isclose(recurrent_norm, torch.zeros_like(recurrent_norm)):
+    m_norm = torch.linalg.vector_norm(m_vector)
+    if torch.isclose(m_norm, torch.zeros_like(m_norm)):
         raise ValueError("m must be nonzero")
-    recurrent_axis = recurrent_vector / recurrent_norm
+    m_axis = m_vector / m_norm
 
-    orthogonal_input = input_vector - torch.dot(input_vector, recurrent_axis) * recurrent_axis
+    orthogonal_input = input_vector - torch.dot(input_vector, m_axis) * m_axis
     input_norm = torch.linalg.vector_norm(orthogonal_input)
     if torch.isclose(input_norm, torch.zeros_like(input_norm)):
         raise ValueError("I and m must span a plane")
 
     input_axis = orthogonal_input / input_norm
-    basis = torch.stack((recurrent_axis, input_axis), dim=1)
+    basis = torch.stack((m_axis, input_axis), dim=1)
     return (states.detach() @ basis).cpu().numpy()

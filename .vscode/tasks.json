@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Trickle: Run current Python file",
+      "type": "process",
+      "command": "trickle",
+      "args": [
+        "run",
+        "python",
+        "${relativeFile}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}

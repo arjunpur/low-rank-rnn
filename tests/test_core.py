@@ -6,13 +6,14 @@ import unittest
 
 import numpy as np
 import torch
+from jaxtyping import TypeCheckError
 from torch import nn
 
 from low_rank_rnn.analysis import (
     connectivity_covariance,
     connectivity_vectors,
     fit_loading_gaussian,
-    project_activity,
+    project_rank_one_activity,
     sample_loading_gaussian,
     sample_rank_one_rnns,
 )
@@ -43,6 +44,12 @@ class LowRankRNNTests(unittest.TestCase):
         self.assertEqual(dict(model.named_parameters()).keys(), {"m", "n"})
         self.assertEqual(dict(model.named_buffers()).keys(), {"I", "w"})
 
+    def test_forward_rejects_inputs_without_batch_and_time_axes(self) -> None:
+        model = LowRankRNN(4)
+
+        with self.assertRaises(TypeCheckError):
+            model(torch.zeros(2, 3, 1))
+
 
 class TrainingTests(unittest.TestCase):
     def test_decision_loss_uses_only_the_final_window(self) -> None:
@@ -52,6 +59,10 @@ class TrainingTests(unittest.TestCase):
         loss = decision_loss(outputs, labels, decision_steps=2)
 
         torch.testing.assert_close(loss, torch.tensor(2.5))
+
+    def test_decision_loss_rejects_mismatched_batches(self) -> None:
+        with self.assertRaises(TypeCheckError):
+            decision_loss(torch.zeros(2, 4), torch.zeros(3), decision_steps=2)
 
     def test_training_runs_and_keeps_fixed_vectors_fixed(self) -> None:
         torch.manual_seed(0)
@@ -99,7 +110,8 @@ class TrainingTests(unittest.TestCase):
             [line.split(":", maxsplit=1)[0] for line in log_lines],
             ["Epoch 2", "Epoch 4", "Epoch 5"],
         )
-        self.assertTrue(all("accuracy=" in line for line in log_lines))
+        self.assertTrue(all("loss=" in line for line in log_lines))
+        self.assertTrue(all("accuracy=" not in line for line in log_lines))
 
     def test_accuracy_restores_evaluation_mode(self) -> None:
         class OutputModel(nn.Module):
@@ -202,9 +214,15 @@ class AnalysisTests(unittest.TestCase):
             model.I.copy_(torch.tensor([1.0, 1.0]))
         states = torch.tensor([[[2.0, 3.0], [4.0, 5.0]]])
 
-        projected = project_activity(states, model)
+        projected = project_rank_one_activity(states, model)
 
         np.testing.assert_allclose(projected, states.numpy())
+
+    def test_rank_one_activity_projection_rejects_higher_rank_models(self) -> None:
+        model = LowRankRNN(2, rank=2)
+
+        with self.assertRaisesRegex(ValueError, "rank 1"):
+            project_rank_one_activity(torch.zeros(1, 1, 2), model)
 
 
 if __name__ == "__main__":

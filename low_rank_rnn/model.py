@@ -1,9 +1,10 @@
 """Low-rank recurrent neural network."""
 
-from __future__ import annotations
-
 import torch
+from jaxtyping import Float
 from torch import nn
+
+from low_rank_rnn._typing import typechecked
 
 
 class LowRankRNN(nn.Module):
@@ -26,7 +27,14 @@ class LowRankRNN(nn.Module):
         self.register_buffer("I", torch.randn(n_units))
         self.register_buffer("w", 4.0 * torch.randn(n_units))
 
-    def forward(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    @typechecked
+    def forward(
+        self,
+        inputs: Float[torch.Tensor, "batch time"],
+    ) -> tuple[
+        Float[torch.Tensor, "batch time"],
+        Float[torch.Tensor, "batch time unit"],
+    ]:
         """Return readouts and states for inputs shaped ``(batch, time)``."""
         batch_size, n_steps = inputs.shape
         state = inputs.new_zeros(batch_size, self.n_units)
