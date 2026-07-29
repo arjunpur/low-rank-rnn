@@ -77,15 +77,19 @@ def sample_trials(
     delays: npt.ArrayLike = DELAYS,
     *,
     rng: np.random.Generator,
+    frequencies: npt.ArrayLike = FREQUENCIES,
 ) -> tuple[
     Float[torch.Tensor, "trial time"],
     Float[torch.Tensor, "trial"],
     Float[torch.Tensor, "trial time"],
 ]:
     """Draw frequency pairs and delays uniformly, then build the trials."""
-    frequencies = rng.choice(FREQUENCIES, size=(num_trials, 2))
+    sampled_frequencies = rng.choice(
+        np.asarray(frequencies),
+        size=(num_trials, 2),
+    )
     sampled_delays = rng.choice(np.asarray(delays), size=num_trials)
-    return make_trials(frequencies, sampled_delays)
+    return make_trials(sampled_frequencies, sampled_delays)
 
 
 @typechecked

@@ -41,12 +41,26 @@ COVARIANCE_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     tuple(COVARIANCE_COLORS.values()),
 )
 
+# Signed task values use the same blue/red semantics as left/right choices.
+SIGNED_VALUE_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
+    "signed_value",
+    (CHOICE_COLORS[-1], "#F7F7F7", CHOICE_COLORS[1]),
+)
+
+# Residuals are a different quantity, so they use a distinct blue/gold scale.
+RESIDUAL_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
+    "residual",
+    (COLORS["blue"], "#F7F7F7", COLORS["gold"]),
+)
+
 
 STYLE = {
     # Canvas and typography
     "figure.dpi": 120,
     "figure.figsize": (6.4, 4.0),
     "figure.facecolor": "white",
+    "figure.titlesize": 11,
+    "figure.titleweight": "medium",
     "font.family": "sans-serif",
     "font.sans-serif": [
         "Helvetica Neue",

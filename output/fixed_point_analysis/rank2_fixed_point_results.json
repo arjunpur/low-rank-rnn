@@ -1,0 +1,152 @@
+{
+  "fixed_delay_oscillatory": {
+    "root_search_starts": 1962,
+    "proven_root_coordinate_bounds": [
+      1.6343688189549141,
+      1.3637346529471563
+    ],
+    "loop_gains": [
+      {
+        "real": 0.9885750819160304,
+        "imag": 0.22312685707315635
+      },
+      {
+        "real": 0.9885750819160304,
+        "imag": -0.22312685707315635
+      }
+    ],
+    "fixed_points": [
+      {
+        "coordinates": [
+          0.0,
+          0.0
+        ],
+        "state_rms": 0.0,
+        "readout": 0.0,
+        "classification": "stable focus",
+        "flow_eigenvalues_per_tau": [
+          {
+            "real": -0.011424918083969447,
+            "imag": 0.22312685707315638
+          },
+          {
+            "real": -0.011424918083969447,
+            "imag": -0.22312685707315638
+          }
+        ],
+        "euler_multiplier_magnitudes": [
+          0.9987125100300063,
+          0.9987125100300063
+        ],
+        "latent_residual": 0.0,
+        "full_state_residual_rms": 0.0,
+        "finite_difference_jacobian_error": 7.671085988647519e-13,
+        "full_spectrum_error": 5.814222757635862e-16
+      }
+    ],
+    "fixed_delay_grid_mse": 0.0007879449985921383,
+    "maximum_physical_speed_between_stable_endpoints_per_tau": null
+  },
+  "structured_persistent_transient": {
+    "root_search_starts": 1962,
+    "proven_root_coordinate_bounds": [
+      0.9908078674237627,
+      1.7964881350995543
+    ],
+    "loop_gains": [
+      {
+        "real": 1.0108017802685336,
+        "imag": 0.0
+      },
+      {
+        "real": -0.21816382417416225,
+        "imag": 0.0
+      }
+    ],
+    "fixed_points": [
+      {
+        "coordinates": [
+          -0.11987606951879509,
+          -4.838166151480596e-05
+        ],
+        "state_rms": 0.11985652400468257,
+        "readout": -0.42333624212454923,
+        "classification": "stable node",
+        "flow_eigenvalues_per_tau": [
+          {
+            "real": -0.02121018424096377,
+            "imag": 0.0
+          },
+          {
+            "real": -1.2158788585259988,
+            "imag": 0.0
+          }
+        ],
+        "euler_multiplier_magnitudes": [
+          0.9957579631518072,
+          0.7568242282948002
+        ],
+        "latent_residual": 3.8544979585227635e-15,
+        "full_state_residual_rms": 4.4826598910785955e-15,
+        "finite_difference_jacobian_error": 1.1747824935071094e-11,
+        "full_spectrum_error": 4.440892098500626e-16
+      },
+      {
+        "coordinates": [
+          0.0,
+          0.0
+        ],
+        "state_rms": 0.0,
+        "readout": 0.0,
+        "classification": "saddle",
+        "flow_eigenvalues_per_tau": [
+          {
+            "real": 0.010801780268533623,
+            "imag": 0.0
+          },
+          {
+            "real": -1.2181638241741624,
+            "imag": 0.0
+          }
+        ],
+        "euler_multiplier_magnitudes": [
+          1.0021603560537067,
+          0.7563672351651676
+        ],
+        "latent_residual": 0.0,
+        "full_state_residual_rms": 0.0,
+        "finite_difference_jacobian_error": 7.663227691301344e-13,
+        "full_spectrum_error": 6.661338147750939e-16
+      },
+      {
+        "coordinates": [
+          0.11987606951862571,
+          4.83816615161918e-05
+        ],
+        "state_rms": 0.11985652400451263,
+        "readout": 0.42333624212396,
+        "classification": "stable node",
+        "flow_eigenvalues_per_tau": [
+          {
+            "real": -0.02121018424087584,
+            "imag": 0.0
+          },
+          {
+            "real": -1.2158788585260054,
+            "imag": 0.0
+          }
+        ],
+        "euler_multiplier_magnitudes": [
+          0.9957579631518249,
+          0.7568242282947989
+        ],
+        "latent_residual": 2.6376836465200347e-16,
+        "full_state_residual_rms": 2.596702740163415e-16,
+        "finite_difference_jacobian_error": 1.6095791366410594e-11,
+        "full_spectrum_error": 4.440892098500626e-16
+      }
+    ],
+    "fixed_delay_grid_mse": null,
+    "maximum_physical_speed_between_stable_endpoints_per_tau": 0.0005047533178354008
+  }
+}

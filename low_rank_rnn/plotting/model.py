@@ -20,19 +20,35 @@ from low_rank_rnn.plotting.style import (
 )
 
 
-def plot_accuracy_comparison(
-    trained_accuracy: float,
-    sampled_accuracies: npt.ArrayLike,
+def plot_performance_comparison(
+    trained_value: float,
+    sampled_values: npt.ArrayLike,
+    *,
+    ylabel: str,
+    title: str,
+    baseline: float | None = None,
+    baseline_label: str | None = None,
+    value_format: str = "{:.1%}",
+    legend_loc: str = "lower left",
+    axis: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Compare one trained network with Gaussian-sampled networks."""
-    sampled_accuracies = np.asarray(sampled_accuracies, dtype=float)
-    sample_positions = np.linspace(0.86, 1.14, len(sampled_accuracies))
-    sampled_mean = float(sampled_accuracies.mean())
+    """Compare one trained network with Gaussian-sampled networks.
 
-    fig, axis = plt.subplots(figsize=(6.4, 4.2))
+    ``baseline`` draws the reference a network that has learned nothing would
+    reach - chance for a classification, the error of a constant output for a
+    regression. Pass ``axis`` to draw into an existing subplot.
+    """
+    sampled_values = np.asarray(sampled_values, dtype=float)
+    sample_positions = np.linspace(0.86, 1.14, len(sampled_values))
+    sampled_mean = float(sampled_values.mean())
+
+    owns_figure = axis is None
+    fig, axis = (
+        plt.subplots(figsize=(6.4, 4.2)) if owns_figure else (axis.figure, axis)
+    )
     axis.scatter(
         0,
-        trained_accuracy,
+        trained_value,
         color=COLORS["green"],
         marker="D",
         s=80,
@@ -40,7 +56,7 @@ def plot_accuracy_comparison(
     )
     axis.scatter(
         sample_positions,
-        sampled_accuracies,
+        sampled_values,
         color=COLORS["purple"],
         edgecolor="white",
         linewidth=0.6,
@@ -48,11 +64,11 @@ def plot_accuracy_comparison(
         zorder=3,
     )
     axis.axhline(
-        trained_accuracy,
+        trained_value,
         color=COLORS["green"],
         linestyle="--",
         linewidth=1.2,
-        label=f"trained network: {trained_accuracy:.1%}",
+        label=f"trained network: {value_format.format(trained_value)}",
     )
     axis.hlines(
         sampled_mean,
@@ -60,24 +76,49 @@ def plot_accuracy_comparison(
         1.18,
         color=COLORS["purple"],
         linewidth=2.2,
-        label=f"sample mean: {sampled_mean:.1%}",
+        label=f"sample mean: {value_format.format(sampled_mean)}",
     )
-    axis.axhline(
-        0.5,
-        color=COLORS["gray"],
-        linestyle=":",
-        linewidth=1.0,
-        label="chance: 50%",
-    )
+    if baseline is not None:
+        axis.axhline(
+            baseline,
+            color=COLORS["gray"],
+            linestyle=":",
+            linewidth=1.0,
+            label=baseline_label,
+        )
 
     axis.set_xticks((0, 1), labels=("Trained network", "Gaussian samples"))
     axis.set_xlim(-0.35, 1.35)
+    axis.set_ylabel(ylabel)
+    axis.set_title(title)
+    axis.legend(loc=legend_loc)
+    if owns_figure:
+        fig.tight_layout()
+    return fig, axis
+
+
+def plot_accuracy_comparison(
+    trained_accuracy: float,
+    sampled_accuracies: npt.ArrayLike,
+    *,
+    title: str = "Held-out perceptual decision performance",
+    axis: plt.Axes | None = None,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Compare decision accuracy of a trained and Gaussian-sampled networks."""
+    owns_figure = axis is None
+    fig, axis = plot_performance_comparison(
+        trained_accuracy,
+        sampled_accuracies,
+        ylabel="Decision accuracy",
+        title=title,
+        baseline=0.5,
+        baseline_label="chance: 50%",
+        axis=axis,
+    )
     axis.set_ylim(0, 1.03)
     axis.yaxis.set_major_formatter(PercentFormatter(1.0))
-    axis.set_ylabel("Decision accuracy")
-    axis.set_title("Held-out perceptual decision performance")
-    axis.legend(loc="lower left")
-    fig.tight_layout()
+    if owns_figure:
+        fig.tight_layout()
     return fig, axis
 
 
@@ -267,7 +308,9 @@ def plot_connectivity_covariance(
     visible = pair_covariances[~mask]
     color_limit = max(float(np.max(np.abs(visible))), 1e-12)
 
-    fig, axis = plt.subplots(figsize=(5.2, 4.0))
+    # Grow the figure with the grid so the per-cell labels stay legible.
+    n_pairs = len(names) - 1
+    fig, axis = plt.subplots(figsize=(1.35 * n_pairs + 1.4, 1.0 * n_pairs + 1.0))
     image = axis.imshow(
         np.ma.masked_array(pair_covariances, mask=mask),
         cmap=COVARIANCE_CMAP,

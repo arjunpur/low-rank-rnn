@@ -10,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.data.variable_delay import DELAYS, sample_trials
+from low_rank_rnn.data.variable_delay import DELAYS, FREQUENCIES, sample_trials
 
 
 def _decision_window(
@@ -100,19 +100,21 @@ def train_variable_delay(
     stages: Sequence[npt.ArrayLike] = (DELAYS,),
     *,
     rng: np.random.Generator,
+    frequencies: npt.ArrayLike = FREQUENCIES,
     num_trials: int = 256,
     epochs_per_stage: int = 300,
     learning_rate: float = 5e-3,
     batch_size: int | None = None,
+    max_gradient_norm: float | None = None,
 ) -> list[float]:
     """Train on random delays, one curriculum stage at a time.
 
     Each stage draws a fresh trial set from its own range of delays; the
-    optimizer carries over between stages. A single stage spanning the whole
-    range trains the task without a curriculum, and a single stage holding one
-    delay trains the fixed-delay version of the task. ``batch_size`` defaults to
-    full batch; set it smaller for minibatch SGD. Returns the mean loss per
-    epoch.
+    optimizer carries over between stages. ``frequencies`` defines the values
+    sampled for each stimulus. A single stage spanning the whole range trains
+    the task without a curriculum, and a single stage holding one delay trains
+    the fixed-delay version of the task. ``batch_size`` defaults to full batch;
+    set it smaller for minibatch SGD. Returns the mean loss per epoch.
     """
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     losses = []
@@ -123,6 +125,7 @@ def train_variable_delay(
             num_trials,
             stage_delays,
             rng=rng,
+            frequencies=frequencies,
         )
         batches = DataLoader(
             TensorDataset(inputs, targets, decision_mask),
@@ -137,6 +140,11 @@ def train_variable_delay(
 
                 optimizer.zero_grad()
                 loss.backward()
+                if max_gradient_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(),
+                        max_gradient_norm,
+                    )
                 optimizer.step()
                 total_loss += loss.item() * len(batch_inputs)
             losses.append(total_loss / num_trials)

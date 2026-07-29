@@ -11,11 +11,14 @@ from torch import nn
 
 from low_rank_rnn.analysis import (
     connectivity_covariance,
+    connectivity_non_normality,
+    connectivity_overlap,
     connectivity_vectors,
     fit_loading_gaussian,
     project_rank_one_activity,
     sample_loading_gaussian,
-    sample_rank_one_rnns,
+    sample_low_rank_rnns,
+    svd_connectivity_basis,
 )
 from low_rank_rnn.model import LowRankRNN
 from low_rank_rnn.training import decision_accuracy, decision_loss, train_model
@@ -171,7 +174,7 @@ class AnalysisTests(unittest.TestCase):
         mean = np.array([1.0, 2.0, 3.0, 4.0])
         covariance = np.zeros((4, 4))
 
-        networks = sample_rank_one_rnns(
+        networks = sample_low_rank_rnns(
             names,
             mean,
             covariance,
@@ -186,6 +189,67 @@ class AnalysisTests(unittest.TestCase):
             for name, expected_value in zip(names, mean, strict=True):
                 expected = torch.full_like(getattr(network, name), expected_value)
                 torch.testing.assert_close(getattr(network, name), expected)
+
+    def test_svd_basis_keeps_the_network_and_orthogonalizes_each_set(self) -> None:
+        torch.manual_seed(4)
+        model = LowRankRNN(32, rank=2)
+        raw_m = model.m.detach().numpy()
+        raw_n = model.n.detach().numpy()
+
+        m, n = svd_connectivity_basis(model)
+
+        np.testing.assert_allclose(m @ n.T, raw_m @ raw_n.T, atol=1e-4)
+        self.assertAlmostEqual(float(m[:, 0] @ m[:, 1]), 0.0, places=6)
+        self.assertAlmostEqual(float(n[:, 0] @ n[:, 1]), 0.0, places=6)
+        np.testing.assert_allclose(
+            np.sort(np.linalg.eigvals(connectivity_overlap(m, n)).real),
+            np.sort(np.linalg.eigvals(raw_n.T @ raw_m / 32).real),
+            atol=1e-4,
+        )
+
+    def test_non_normality_vanishes_when_each_n_pairs_with_its_own_m(self) -> None:
+        patterns = np.linalg.qr(np.random.default_rng(0).standard_normal((32, 2)))[0]
+
+        aligned = connectivity_non_normality(patterns, patterns * (1.0, -0.5))
+        # Both selection vectors reading the same output pattern, as the trained
+        # randomized-delay network does.
+        chained = connectivity_non_normality(
+            patterns, np.column_stack([patterns[:, 1], patterns[:, 1]])
+        )
+
+        self.assertAlmostEqual(aligned, 0.0, places=6)
+        self.assertGreater(chained, 0.5)
+
+    def test_sampled_networks_split_higher_rank_loadings_by_column(self) -> None:
+        names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
+        mean = np.arange(1.0, 7.0)
+        covariance = np.zeros((6, 6))
+
+        (network,) = sample_low_rank_rnns(
+            names,
+            mean,
+            covariance,
+            num_networks=1,
+            num_neurons=5,
+            rng=np.random.default_rng(0),
+        )
+
+        self.assertEqual(network.n.shape, (5, 2))
+        for name, expected_value in zip(names, mean, strict=True):
+            vector, _, index = name.partition("_")
+            column = getattr(network, vector)
+            actual = column if not index else column[:, int(index) - 1]
+            torch.testing.assert_close(actual, torch.full_like(actual, expected_value))
+
+    def test_sampled_networks_reject_unexpected_loading_names(self) -> None:
+        with self.assertRaises(ValueError):
+            sample_low_rank_rnns(
+                ("I", "m", "n", "w"),
+                np.zeros(4),
+                np.zeros((4, 4)),
+                num_networks=1,
+                num_neurons=2,
+            )
 
     def test_loading_gaussian_sampling_is_reproducible(self) -> None:
         mean = np.array([1.0, 2.0])

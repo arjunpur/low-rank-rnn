@@ -53,6 +53,60 @@ def connectivity_covariance(
 
 
 @typechecked
+def svd_connectivity_basis(
+    model: LowRankRNN,
+) -> tuple[Float[np.ndarray, "unit rank"], Float[np.ndarray, "unit rank"]]:
+    """Return ``m`` and ``n`` in the canonical basis of Dubreuil et al.
+
+    Replacing ``m`` by ``mA`` and ``n`` by ``nA^-T`` leaves the connectivity, and
+    therefore the network, completely unchanged while altering every covariance
+    between the two sets. Covariance structure is only comparable once that
+    freedom is fixed. The paper fixes it by requiring the output patterns to be
+    mutually orthogonal, and likewise the input-selection patterns, which the
+    singular-value decomposition of the connectivity determines uniquely.
+    """
+    m = model.m.detach().cpu().numpy().astype(float)
+    n = model.n.detach().cpu().numpy().astype(float)
+    m_basis, m_factor = np.linalg.qr(m)
+    n_basis, n_factor = np.linalg.qr(n)
+    left, values, right = np.linalg.svd(m_factor @ n_factor.T)
+    scale = np.sqrt(values)
+    return m_basis @ left * scale, n_basis @ right.T * scale
+
+
+@typechecked
+def connectivity_overlap(
+    m: npt.ArrayLike,
+    n: npt.ArrayLike,
+) -> Float[np.ndarray, "rank rank"]:
+    """Return C = n^T m / N, the gain of the recurrent loop between modes.
+
+    Entry ``(a, b)`` is how much of mode ``b``, once written into the activity by
+    ``m_b``, comes back as mode ``a`` when read by ``n_a``. Its eigenvalues set
+    the timescales of the latent dynamics: one at 1 is a line attractor.
+    """
+    m, n = np.asarray(m, dtype=float), np.asarray(n, dtype=float)
+    return n.T @ m / len(m)
+
+
+@typechecked
+def connectivity_non_normality(m: npt.ArrayLike, n: npt.ArrayLike) -> float:
+    """Return ||JJ^T - J^TJ|| / ||J||^2 for the low-rank connectivity J.
+
+    Zero when each ``n_r`` pairs with its own ``m_r``, as in the paper's reduced
+    model. Large when the modes are chained, one mode's output being read by
+    another mode's selection vector. Unlike the individual covariances this does
+    not depend on the choice of basis.
+    """
+    m, n = np.asarray(m, dtype=float), np.asarray(n, dtype=float)
+    connectivity = m @ n.T / len(m)
+    commutator = connectivity @ connectivity.T - connectivity.T @ connectivity
+    return float(
+        np.linalg.norm(commutator) / np.linalg.norm(connectivity) ** 2
+    )
+
+
+@typechecked
 def fit_loading_gaussian(
     vectors: Mapping[str, npt.ArrayLike],
 ) -> tuple[
@@ -83,7 +137,7 @@ def sample_loading_gaussian(
     )
 
 
-def sample_rank_one_rnns(
+def sample_low_rank_rnns(
     names: Sequence[str],
     mean: npt.ArrayLike,
     covariance: npt.ArrayLike,
@@ -92,11 +146,23 @@ def sample_rank_one_rnns(
     num_neurons: int,
     rng: np.random.Generator | None = None,
 ) -> list[LowRankRNN]:
-    """Create rank-one RNNs from samples of a fitted loading Gaussian."""
+    """Create RNNs from samples of a fitted loading Gaussian.
+
+    ``names`` is the loading order :func:`connectivity_vectors` produces, which
+    also fixes the rank: ``("I", "n", "m", "w")`` for rank one, and
+    ``("I", "n_1", "n_2", "m_1", "m_2", "w")`` for rank two.
+    """
     names = tuple(names)
-    expected_names = ("I", "n", "m", "w")
-    if len(names) != len(expected_names) or set(names) != set(expected_names):
-        raise ValueError(f"names must contain exactly {expected_names}")
+    rank = max((len(names) - 2) // 2, 1)
+    suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
+    expected_names = (
+        "I",
+        *(f"n{suffix}" for suffix in suffixes),
+        *(f"m{suffix}" for suffix in suffixes),
+        "w",
+    )
+    if names != expected_names:
+        raise ValueError(f"names must be exactly {expected_names}")
 
     generator = rng if rng is not None else np.random.default_rng()
     networks = []
@@ -107,12 +173,21 @@ def sample_rank_one_rnns(
             num_samples=num_neurons,
             rng=generator,
         )
-        network = LowRankRNN(n_units=num_neurons, rank=1)
+        columns = dict(zip(names, network_loadings.T, strict=True))
+        network = LowRankRNN(n_units=num_neurons, rank=rank)
         with torch.no_grad():
-            for name, values in zip(names, network_loadings.T, strict=True):
+            # I and w are single vectors; n and m take one column per rank index.
+            for name, loadings in (
+                ("I", [columns["I"]]),
+                ("n", [columns[f"n{suffix}"] for suffix in suffixes]),
+                ("m", [columns[f"m{suffix}"] for suffix in suffixes]),
+                ("w", [columns["w"]]),
+            ):
                 target = getattr(network, name)
                 target.copy_(
-                    torch.as_tensor(values, dtype=target.dtype).reshape_as(target)
+                    torch.as_tensor(
+                        np.column_stack(loadings), dtype=target.dtype
+                    ).reshape_as(target)
                 )
         networks.append(network)
     return networks
