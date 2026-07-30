@@ -188,6 +188,18 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(tuple(vectors), ("I", "n_1", "n_2", "m_1", "m_2", "w"))
         self.assertTrue(all(vector.shape == (3,) for vector in vectors.values()))
 
+    def test_connectivity_vectors_accept_a_recurrent_basis(self) -> None:
+        model = LowRankRNN(3, rank=2)
+        m = np.arange(6.0).reshape(3, 2)
+        n = -m
+
+        vectors = analysis.connectivity_vectors(model, m=m, n=n)
+
+        np.testing.assert_allclose(vectors["m_1"], m[:, 0])
+        np.testing.assert_allclose(vectors["m_2"], m[:, 1])
+        np.testing.assert_allclose(vectors["n_1"], n[:, 0])
+        np.testing.assert_allclose(vectors["n_2"], n[:, 1])
+
     def test_loading_gaussian_matches_numpy(self) -> None:
         vectors = {
             "I": np.array([1.0, 2.0, 3.0]),
@@ -298,9 +310,9 @@ class AnalysisTests(unittest.TestCase):
         )
 
     def test_masked_regression_metrics_use_each_decision_window(self) -> None:
-        outputs = np.array(((1.0, 9.0, 9.0), (9.0, 2.0, 2.0)))
+        outputs = np.array(((0.0, 2.0, 9.0), (9.0, 1.0, 3.0)))
         targets = np.array((1.0, 2.0))
-        decision_mask = np.array(((1.0, 0.0, 0.0), (0.0, 1.0, 1.0)))
+        decision_mask = np.array(((1.0, 1.0, 0.0), (0.0, 1.0, 1.0)))
 
         mse, r_squared, decisions = analysis.masked_regression_metrics(
             outputs,
@@ -310,6 +322,24 @@ class AnalysisTests(unittest.TestCase):
 
         self.assertEqual((mse, r_squared), (0.0, 1.0))
         np.testing.assert_allclose(decisions, targets)
+
+    def test_variable_delay_metrics_match_model_score_wrapper(self) -> None:
+        model = LowRankRNN(8, rank=2)
+        frequency_pairs = working_memory.frequency_pair_grid()
+        delays = np.array((25, 50))
+
+        mses, r_squared, decisions = analysis.variable_delay_metrics(
+            lambda inputs: analysis.run_model(model, inputs)[0],
+            frequency_pairs,
+            delays,
+        )
+
+        np.testing.assert_allclose(
+            mses,
+            analysis.variable_delay_mses(model, frequency_pairs, delays),
+        )
+        self.assertEqual(r_squared.shape, (2,))
+        self.assertEqual(decisions.shape, (2, len(frequency_pairs)))
 
     def test_fixed_point_search_classifies_a_double_well_flow(self) -> None:
         grid, flow, points, slopes = analysis.find_fixed_points_1d(

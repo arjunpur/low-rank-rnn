@@ -15,7 +15,6 @@ _NORMAL_NODES = np.sqrt(2) * _QUADRATURE_NODES
 _NORMAL_WEIGHTS = _QUADRATURE_WEIGHTS / np.sqrt(np.pi)
 
 
-@typechecked
 def _loading_indices(
     names: Sequence[str],
 ) -> tuple[
@@ -30,24 +29,13 @@ def _loading_indices(
     return n_indices, m_indices, basis_indices
 
 
-@typechecked
 def _rate_moments(
     coefficients: Real[np.ndarray, "batch basis"],
-    mean: Real[np.ndarray, "coordinate"],
-    covariance: Real[np.ndarray, "coordinate coordinate"],
-    basis_indices: Integer[np.ndarray, "basis"],
+    mean: Real[np.ndarray, "basis"],
+    covariance: Real[np.ndarray, "basis basis"],
 ) -> tuple[Float[np.ndarray, "batch"], Float[np.ndarray, "batch"]]:
-    coefficients = np.atleast_2d(np.asarray(coefficients, dtype=float))
-    mean = np.asarray(mean)
-    covariance = np.asarray(covariance)
-    basis_indices = np.asarray(basis_indices)
-    current_mean = coefficients @ mean[basis_indices]
-    current_variance = np.einsum(
-        "bi,ij,bj->b",
-        coefficients,
-        covariance[np.ix_(basis_indices, basis_indices)],
-        coefficients,
-    )
+    current_mean = coefficients @ mean
+    current_variance = ((coefficients @ covariance) * coefficients).sum(axis=1)
     currents = current_mean[:, None] + np.sqrt(
         np.maximum(current_variance, 0)
     )[:, None] * _NORMAL_NODES
@@ -78,18 +66,17 @@ def gaussian_latent_flow(
     coefficients = np.column_stack((filtered_input, kappa))
     mean_rate, mean_gain = _rate_moments(
         coefficients,
-        mean,
-        covariance,
-        basis_indices,
+        mean[basis_indices],
+        covariance[np.ix_(basis_indices, basis_indices)],
     )
     covariance_drive = (
-        covariance[np.ix_(n_indices, basis_indices)] @ coefficients.T
-    ).T
-    recurrent_drive = (
-        mean[n_indices][None, :] * mean_rate[:, None]
-        + covariance_drive * mean_gain[:, None]
+        coefficients @ covariance[np.ix_(n_indices, basis_indices)].T
     )
-    return -kappa + recurrent_drive
+    return (
+        -kappa
+        + mean_rate[:, None] * mean[n_indices]
+        + mean_gain[:, None] * covariance_drive
+    )
 
 
 @typechecked
@@ -107,12 +94,16 @@ def simulate_gaussian_circuit(
 ]:
     """Simulate the Gaussian equivalent circuit for any low rank."""
     inputs = np.asarray(inputs, dtype=float)
-    names = tuple(names)
     mean = np.asarray(mean)
     covariance = np.asarray(covariance)
     n_indices, _, basis_indices = _loading_indices(names)
-    readout_index = len(names) - 1
     rank = len(n_indices)
+    basis_mean = mean[basis_indices]
+    basis_covariance = covariance[np.ix_(basis_indices, basis_indices)]
+    recurrent_mean = mean[n_indices]
+    recurrent_covariance = covariance[np.ix_(n_indices, basis_indices)]
+    readout_mean = mean[-1]
+    readout_covariance = covariance[-1, basis_indices]
 
     batch_size, num_steps = inputs.shape
     kappa = np.zeros((batch_size, rank))
@@ -127,25 +118,19 @@ def simulate_gaussian_circuit(
         coefficients = np.column_stack((filtered_input, kappa))
         mean_rate, mean_gain = _rate_moments(
             coefficients,
-            mean,
-            covariance,
-            basis_indices,
+            basis_mean,
+            basis_covariance,
         )
-        kappa += step_size * gaussian_latent_flow(
-            kappa,
-            filtered_input,
-            names,
-            mean,
-            covariance,
+        covariance_drive = coefficients @ recurrent_covariance.T
+        recurrent_drive = (
+            mean_rate[:, None] * recurrent_mean
+            + mean_gain[:, None] * covariance_drive
         )
-
-        readout_covariance = (
-            covariance[readout_index, basis_indices] * coefficients
-        ).sum(axis=1)
         outputs[:, time] = (
-            mean[readout_index] * mean_rate
-            + readout_covariance * mean_gain
+            readout_mean * mean_rate
+            + mean_gain * (coefficients @ readout_covariance)
         )
+        kappa += step_size * (-kappa + recurrent_drive)
         filtered_input += step_size * (-filtered_input + inputs[:, time])
 
     return outputs, kappa_history, filtered_history
@@ -166,7 +151,6 @@ def rank_one_fixed_points(
 ]:
     """Find fixed points of a fitted rank-one Gaussian circuit."""
 
-    @typechecked
     def flow(
         kappa: Real[np.ndarray, "point"],
     ) -> Float[np.ndarray, "point"]:
@@ -180,15 +164,6 @@ def rank_one_fixed_points(
         )[:, 0]
 
     return find_fixed_points_1d(flow, bounds=bounds)
-
-
-@typechecked
-def _standard_gaussian_gain(
-    delta: Real[np.ndarray, "batch"],
-) -> Float[np.ndarray, "batch"]:
-    delta = np.atleast_1d(np.asarray(delta, dtype=float))
-    rates = np.tanh(delta[:, None] * _NORMAL_NODES)
-    return (1 - rates**2) @ _NORMAL_WEIGHTS
 
 
 @typechecked
@@ -211,36 +186,34 @@ def simulate_diagonal_circuit(
     are deliberately ignored.
     """
     inputs = np.asarray(inputs, dtype=float)
-    names = tuple(names)
     covariance = np.asarray(covariance, dtype=float)
     n_indices, m_indices, _ = _loading_indices(names)
     if len(n_indices) != 2:
         raise ValueError("the diagonal handout circuit requires rank two")
 
-    input_index = 0
-    readout_index = len(names) - 1
     recurrent_covariance = covariance[n_indices, m_indices]
-    input_covariance = covariance[n_indices, input_index]
-    readout_covariance = covariance[readout_index, m_indices]
+    input_covariance = covariance[n_indices, 0]
+    readout_covariance = covariance[-1, m_indices]
     mode_variance = covariance[m_indices, m_indices]
-    input_variance = covariance[input_index, input_index]
+    input_variance = covariance[0, 0]
 
     batch_size, num_steps = inputs.shape
-    kappa = np.zeros((batch_size, len(n_indices)))
+    kappa = np.zeros((batch_size, 2))
     filtered_input = np.zeros(batch_size)
     outputs = np.empty((batch_size, num_steps))
-    kappa_history = np.empty((batch_size, num_steps, len(n_indices)))
+    kappa_history = np.empty((batch_size, num_steps, 2))
     filtered_history = np.empty((batch_size, num_steps))
 
     for time in range(num_steps):
         kappa_history[:, time] = kappa
         filtered_history[:, time] = filtered_input
-        delta_squared = (
+        current_variance = (
             (kappa**2 * mode_variance).sum(axis=1)
             + filtered_input**2 * input_variance
         )
-        delta = np.sqrt(np.maximum(delta_squared, 0))
-        gain = _standard_gaussian_gain(delta)
+        current_scale = np.sqrt(np.maximum(current_variance, 0))
+        rates = np.tanh(current_scale[:, None] * _NORMAL_NODES)
+        gain = (1 - rates**2) @ _NORMAL_WEIGHTS
         outputs[:, time] = gain * (kappa @ readout_covariance)
         recurrent_drive = gain[:, None] * (
             kappa * recurrent_covariance

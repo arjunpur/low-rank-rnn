@@ -90,71 +90,52 @@ def plot_memory_behavior(
     frequencies: Real[np.ndarray, "frequency"],
     *,
     mse: float,
-    r_squared: float,
     loss_threshold: float,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Plot training and the complete fixed-delay condition grid."""
+    """Plot training losses and the fixed-delay prediction residual."""
     target_matrix = np.asarray(target_matrix)
     prediction_matrix = np.asarray(predictions).reshape(target_matrix.shape)
     residual_matrix = prediction_matrix - target_matrix
     residual_limit = max(float(np.max(np.abs(residual_matrix))), 1e-3)
-    value_norm = TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
     residual_norm = TwoSlopeNorm(
         vmin=-residual_limit,
         vcenter=0,
         vmax=residual_limit,
     )
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8), constrained_layout=True)
-    axes[0, 0].semilogy(rank_two_losses, color=COLORS["blue"], label="rank 2")
-    axes[0, 0].semilogy(
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), constrained_layout=True)
+    axes[0].semilogy(rank_two_losses, color=COLORS["blue"], label="rank 2")
+    axes[0].semilogy(
         rank_one_losses,
         color=COLORS["gold"],
         label="rank 1 control",
     )
-    axes[0, 0].axhline(
+    axes[0].axhline(
         loss_threshold,
         **REFERENCE_LINE_STYLE,
         label=f"target = {loss_threshold:g}",
     )
-    axes[0, 0].set(
+    axes[0].set(
         xlabel="training epoch",
         ylabel="decision-window MSE",
         title="Optimization",
     )
-    axes[0, 0].legend()
+    axes[0].legend()
 
-    for axis, matrix, title in (
-        (axes[0, 1], target_matrix, "Target"),
-        (axes[1, 0], prediction_matrix, "Rank-two prediction"),
-    ):
-        image = axis.imshow(
-            matrix,
-            origin="lower",
-            cmap=SIGNED_VALUE_CMAP,
-            norm=value_norm,
-        )
-        _label_frequency_axes(axis, frequencies)
-        axis.set_title(title)
-        fig.colorbar(image, ax=axis, shrink=0.78, label="normalized value")
-
-    residual_image = axes[1, 1].imshow(
+    residual_image = axes[1].imshow(
         residual_matrix,
         origin="lower",
         cmap=RESIDUAL_CMAP,
         norm=residual_norm,
     )
-    _label_frequency_axes(axes[1, 1], frequencies)
-    axes[1, 1].set_title("Prediction residual")
+    _label_frequency_axes(axes[1], frequencies)
+    axes[1].set_title(f"Prediction residual  |  MSE={mse:.2e}")
     fig.colorbar(
         residual_image,
-        ax=axes[1, 1],
-        shrink=0.78,
+        ax=axes[1],
         label="prediction − target (separate scale)",
     )
-    fig.suptitle(
-        rf"Working-memory behavior  |  MSE={mse:.2e}, $R^2$={r_squared:.3f}"
-    )
+    fig.suptitle("Working-memory behavior")
     return fig, axes
 
 
@@ -395,3 +376,52 @@ def plot_gaussian_pipeline(
     axes[1].legend()
     fig.suptitle(title)
     return fig, axes
+
+
+@typechecked
+def plot_matched_network_comparison(
+    delays_ms: Real[np.ndarray, "delay"],
+    network_a_mses: Real[np.ndarray, "delay"],
+    network_b_mses: Real[np.ndarray, "delay"],
+    *,
+    threshold: float,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Compare both trained networks on one variable-delay test battery."""
+    delays_ms = np.asarray(delays_ms)
+    network_a_mses = np.asarray(network_a_mses)
+    network_b_mses = np.asarray(network_b_mses)
+
+    fig, axis = plt.subplots(figsize=(9, 4.8), constrained_layout=True)
+    marker_interval = max(1, len(delays_ms) // 12)
+    axis.plot(
+        delays_ms,
+        network_a_mses,
+        color=COLORS["blue"],
+        marker="D",
+        markevery=marker_interval,
+        label="Network A — fixed-delay trained",
+    )
+    axis.plot(
+        delays_ms,
+        network_b_mses,
+        color=COLORS["gold"],
+        linestyle="--",
+        marker="o",
+        markerfacecolor="white",
+        markevery=marker_interval,
+        label="Network B — variable-delay trained",
+    )
+    axis.axhline(
+        threshold,
+        **REFERENCE_LINE_STYLE,
+        label=f"task criterion = {threshold:g}",
+    )
+    axis.set_yscale("log")
+    axis.set(
+        xlabel="blank delay (ms)",
+        ylabel="condition-balanced MSE",
+        title="Matched variable-delay evaluation of Networks A and B",
+    )
+    axis.set_xticks((500, 1000, 1500, 2000))
+    axis.legend()
+    return fig, axis

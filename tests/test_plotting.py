@@ -181,6 +181,45 @@ class PlottingTests(unittest.TestCase):
         self.assertEqual(axis.get_xlabel(), r"latent state, $\kappa$")
         self.assertEqual(axis.get_ylabel(), r"filtered input, $v$")
 
+    def test_fixed_point_plot_shows_energy_and_classified_minima(self) -> None:
+        grid = np.linspace(-2, 2, 101)
+        flow = grid * (1 - grid**2)
+
+        _, axis = plotting.plot_fixed_points(
+            grid,
+            flow,
+            np.array((-1.0, 0.0, 1.0)),
+            np.array((-2.0, 1.0, -2.0)),
+        )
+
+        self.assertEqual(
+            axis.get_legend_handles_labels()[1],
+            [
+                r"energy $q(\kappa)=\frac{1}{2}f(\kappa)^2$",
+                "Stable fixed point",
+                "Unstable fixed point",
+            ],
+        )
+        self.assertEqual(axis.get_title(), "Fixed-point energy")
+        self.assertEqual(axis.get_yscale(), "log")
+
+    def test_output_comparison_accepts_subfigure_axes(self) -> None:
+        figure = plt.figure()
+        subfigure = figure.subfigures()
+        axes = subfigure.subplots(2, 2)
+
+        returned_figure, returned_axes = plotting.plot_output_comparison(
+            np.zeros((4, 10)),
+            np.zeros((4, 10)),
+            np.array((-1, -1, 1, 1)),
+            np.arange(4),
+            decision_steps=2,
+            axes=axes,
+        )
+
+        self.assertIs(returned_figure, subfigure)
+        np.testing.assert_array_equal(returned_axes, axes)
+
     def test_accuracy_comparison_shows_every_network(self) -> None:
         sampled_accuracies = np.array([0.5, 0.75, 1.0])
 
@@ -239,7 +278,7 @@ class PlottingTests(unittest.TestCase):
         sampling_figure.canvas.draw()
         performance_figure.canvas.draw()
 
-    def test_memory_behavior_uses_separate_residual_scale(self) -> None:
+    def test_memory_behavior_shows_losses_and_residual(self) -> None:
         targets = np.array(((-1.0, 0.0), (0.0, 1.0)))
         predictions = targets.ravel() + 0.1
 
@@ -250,13 +289,17 @@ class PlottingTests(unittest.TestCase):
             predictions,
             np.array((10, 34)),
             mse=0.01,
-            r_squared=0.9,
             loss_threshold=0.005,
         )
 
+        self.assertEqual(axes.shape, (2,))
         self.assertEqual(
-            axes[1, 1].images[0].get_cmap().name,
+            axes[1].images[0].get_cmap().name,
             "residual",
+        )
+        self.assertEqual(
+            axes[1].get_title(),
+            "Prediction residual  |  MSE=1.00e-02",
         )
 
     def test_latent_plane_uses_arrows_and_labeled_frequency_colorbar(self) -> None:
@@ -328,6 +371,29 @@ class PlottingTests(unittest.TestCase):
                 "handout diagonal circuit",
             ],
         )
+
+    def test_matched_network_comparison_plots_full_delay_battery(self) -> None:
+        delays_ms = np.arange(500, 1300, 100)
+        network_a_mses = np.linspace(0.001, 0.2, len(delays_ms))
+        network_b_mses = np.linspace(0.003, 0.005, len(delays_ms))
+
+        _, axis = plotting.plot_matched_network_comparison(
+            delays_ms,
+            network_a_mses,
+            network_b_mses,
+            threshold=0.005,
+        )
+
+        np.testing.assert_allclose(
+            axis.lines[0].get_ydata(),
+            network_a_mses,
+        )
+        np.testing.assert_allclose(
+            axis.lines[1].get_ydata(),
+            network_b_mses,
+        )
+        np.testing.assert_allclose(axis.lines[0].get_xdata(), delays_ms)
+        self.assertEqual(axis.get_yscale(), "log")
 
     def test_training_loss_labels_curriculum_stages(self) -> None:
         _, axis = plotting.plot_training_loss(

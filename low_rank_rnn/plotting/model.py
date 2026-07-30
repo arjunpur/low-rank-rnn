@@ -127,9 +127,15 @@ def plot_accuracy_comparison(
 def plot_reduced_system_accuracy(
     trained_accuracy: float,
     reduced_accuracy: float,
-) -> tuple[plt.Figure, plt.Axes]:
+    *,
+    axis: plt.Axes | None = None,
+) -> tuple[plt.Figure | SubFigure, plt.Axes]:
     """Compare the trained RNN and its reduced-system accuracy."""
-    fig, axis = plt.subplots(figsize=(5.2, 4.2))
+    owns_figure = axis is None
+    if axis is None:
+        fig, axis = plt.subplots(figsize=(5.2, 4.2))
+    else:
+        fig = axis.figure
     axis.bar(
         ("Trained RNN", "1D system"),
         (trained_accuracy, reduced_accuracy),
@@ -142,7 +148,8 @@ def plot_reduced_system_accuracy(
         ylabel="Decision accuracy",
         title="Held-out perceptual decision performance",
     )
-    fig.tight_layout()
+    if owns_figure:
+        fig.tight_layout()
     return fig, axis
 
 
@@ -649,29 +656,53 @@ def plot_fixed_points(
     flow: Real[np.ndarray, "grid"],
     fixed_points: Real[np.ndarray, "fixed_point"],
     slopes: Real[np.ndarray, "fixed_point"],
-) -> tuple[plt.Figure, np.ndarray]:
-    """Plot a one-dimensional flow, energy, and classified fixed points."""
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot fixed-point energy and classified minima."""
     grid = np.asarray(grid)
     flow = np.asarray(flow)
     fixed_points = np.asarray(fixed_points)
     slopes = np.asarray(slopes)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
-    axes[0].plot(grid, flow, color=COLORS["blue"])
-    axes[0].axhline(0, **REFERENCE_LINE_STYLE)
-    axes[0].set(xlabel=r"$\kappa$", ylabel=r"$f(\kappa)$", title="Zero-input flow")
-    axes[1].semilogy(grid, 0.5 * flow**2 + 1e-12, color=COLORS["purple"])
-    axes[1].set(
+    fig, axis = plt.subplots(figsize=(6.4, 4.2), constrained_layout=True)
+    axis.semilogy(
+        grid,
+        0.5 * flow**2 + 1e-12,
+        color=COLORS["purple"],
+        label=r"energy $q(\kappa)=\frac{1}{2}f(\kappa)^2$",
+    )
+    axis.set(
         xlabel=r"$\kappa$",
         ylabel=r"$q(\kappa)$",
         title="Fixed-point energy",
     )
-    for point, slope in zip(fixed_points, slopes):
-        stable = slope < 0
-        color = COLORS["green"] if stable else COLORS["red"]
-        marker = "o" if stable else "X"
-        axes[0].scatter(point, 0, color=color, marker=marker, s=70, zorder=3)
-        axes[1].scatter(point, 1e-12, color=color, marker=marker, s=70, zorder=3)
-    return fig, axes
+    stable = slopes < 0
+    marker_styles = (
+        (
+            stable,
+            COLORS["green"],
+            "o",
+            "Stable fixed point",
+        ),
+        (
+            ~stable,
+            COLORS["red"],
+            "X",
+            "Unstable fixed point",
+        ),
+    )
+    for mask, color, marker, label in marker_styles:
+        if not np.any(mask):
+            continue
+        axis.scatter(
+            fixed_points[mask],
+            np.full(mask.sum(), 1e-12),
+            color=color,
+            marker=marker,
+            s=70,
+            label=label,
+            zorder=3,
+        )
+    axis.legend()
+    return fig, axis
 
 
 @typechecked

@@ -11,7 +11,6 @@ from jaxtyping import Complex, Float, Integer, Real
 from low_rank_rnn._typing import typechecked
 from low_rank_rnn.data.working_memory import make_variable_delay_trials
 from low_rank_rnn.model import LowRankRNN
-from low_rank_rnn.training import masked_decision_loss
 
 
 @torch.no_grad()
@@ -62,17 +61,15 @@ def masked_regression_metrics(
     targets: Real[np.ndarray, "batch"],
     decision_mask: Real[np.ndarray, "batch time"],
 ) -> tuple[float, float, Float[np.ndarray, "batch"]]:
-    """Score variable-length trials over each trial's decision window."""
+    """Score each trial's mean readout over its own decision window."""
     outputs = np.asarray(outputs)
     targets = np.asarray(targets)
     decision_mask = np.asarray(decision_mask)
-    squared_errors = (outputs - targets[:, None]) ** 2
-    mse = float((squared_errors * decision_mask).sum() / decision_mask.sum())
     decisions = (
         (outputs * decision_mask).sum(axis=1)
         / decision_mask.sum(axis=1)
     )
-    _, r_squared = regression_metrics(decisions, targets)
+    mse, r_squared = regression_metrics(decisions, targets)
     return mse, r_squared, decisions
 
 
@@ -128,13 +125,25 @@ def explained_variance(
 @typechecked
 def connectivity_vectors(
     model: LowRankRNN,
+    *,
+    m: Real[np.ndarray, "unit rank"] | None = None,
+    n: Real[np.ndarray, "unit rank"] | None = None,
 ) -> dict[str, Float[np.ndarray, "unit"]]:
-    """Return each neuron's coordinates in connectivity space."""
-    rank = model.m.shape[1]
+    """Return neuron coordinates, optionally in a supplied recurrent basis."""
+    m_values = (
+        model.m.detach().cpu().numpy()
+        if m is None
+        else np.asarray(m)
+    )
+    n_values = (
+        model.n.detach().cpu().numpy()
+        if n is None
+        else np.asarray(n)
+    )
+    rank = m_values.shape[1]
     suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
     vectors = {"I": model.I.detach().cpu().numpy()}
-    for name in ("n", "m"):
-        values = getattr(model, name).detach().cpu().numpy()
+    for name, values in (("n", n_values), ("m", m_values)):
         vectors.update(
             {
                 f"{name}{suffix}": values[:, index]
@@ -408,26 +417,54 @@ def latent_jacobian_eigenvalues(
     return torch.stack(eigenvalues).cpu().numpy()
 
 
+def variable_delay_metrics(
+    simulate: Callable[[np.ndarray], Real[np.ndarray, "trial time"]],
+    frequency_pairs: Real[np.ndarray, "trial 2"],
+    delays: Integer[np.ndarray, "probe"],
+) -> tuple[
+    Float[np.ndarray, "probe"],
+    Float[np.ndarray, "probe"],
+    Float[np.ndarray, "probe trial"],
+]:
+    """Score one simulator on the same balanced grid at several delays."""
+    frequency_pairs = np.asarray(frequency_pairs)
+    mses = []
+    r_squared_values = []
+    decisions_by_delay = []
+    for delay in np.asarray(delays, dtype=int):
+        inputs, targets, decision_mask = make_variable_delay_trials(
+            frequency_pairs,
+            np.full(len(frequency_pairs), delay),
+        )
+        outputs = simulate(inputs.numpy())
+        mse, r_squared, decisions = masked_regression_metrics(
+            outputs,
+            targets.numpy(),
+            decision_mask.numpy(),
+        )
+        mses.append(mse)
+        r_squared_values.append(r_squared)
+        decisions_by_delay.append(decisions)
+    return (
+        np.asarray(mses),
+        np.asarray(r_squared_values),
+        np.asarray(decisions_by_delay),
+    )
+
+
 @typechecked
 def variable_delay_mses(
     model: LowRankRNN,
     frequency_pairs: Real[np.ndarray, "trial 2"],
     delays: Integer[np.ndarray, "probe"],
 ) -> Float[np.ndarray, "probe"]:
-    """Evaluate masked decision MSE at each fixed probe delay."""
-    frequency_pairs = np.asarray(frequency_pairs)
-    scores = []
-    with torch.no_grad():
-        for delay in np.asarray(delays, dtype=int):
-            inputs, targets, decision_mask = make_variable_delay_trials(
-                frequency_pairs,
-                np.full(len(frequency_pairs), delay),
-            )
-            outputs, _ = model(inputs)
-            scores.append(
-                masked_decision_loss(outputs, targets, decision_mask).item()
-            )
-    return np.asarray(scores)
+    """Evaluate condition-balanced decision MSE at each probe delay."""
+    mses, _, _ = variable_delay_metrics(
+        lambda inputs: run_model(model, inputs)[0],
+        frequency_pairs,
+        delays,
+    )
+    return mses
 
 
 @typechecked

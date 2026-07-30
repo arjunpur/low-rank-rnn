@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import SubFigure
 from matplotlib.patches import Patch
 import numpy as np
 from jaxtyping import Integer, Real
@@ -185,19 +186,24 @@ def plot_output_comparison(
     trial_indices: Integer[np.ndarray, "selection"],
     *,
     decision_steps: int,
-) -> tuple[plt.Figure, np.ndarray]:
+    axes: np.ndarray | None = None,
+) -> tuple[plt.Figure | SubFigure, np.ndarray]:
     """Compare full-RNN and Gaussian-circuit readouts."""
     full_outputs = np.asarray(full_outputs)
     reduced_outputs = np.asarray(reduced_outputs)
     labels = np.asarray(labels)
     trial_indices = np.asarray(trial_indices)
-    fig, axes = plt.subplots(
-        2,
-        2,
-        figsize=(11, 6.5),
-        sharex=True,
-        constrained_layout=True,
-    )
+    if axes is None:
+        fig, axes = plt.subplots(
+            2,
+            2,
+            figsize=(11, 6.5),
+            sharex=True,
+            constrained_layout=True,
+        )
+    else:
+        axes = np.asarray(axes, dtype=object)
+        fig = axes.flat[0].get_figure(root=False)
     for axis, trial in zip(axes.flat, trial_indices):
         color = CHOICE_COLORS[int(labels[trial])]
         axis.plot(full_outputs[trial], color=color, label="full RNN")
@@ -219,7 +225,7 @@ def plot_output_comparison(
             **DECISION_WINDOW_STYLE,
         )
         axis.set_title(f"trial {trial}: target {labels[trial]:+d}")
-    axes[0, 0].legend()
+    axes.flat[0].legend()
     fig.supxlabel("time step")
     fig.supylabel("readout")
     fig.suptitle("Full rank-one RNN and its Gaussian circuit")
