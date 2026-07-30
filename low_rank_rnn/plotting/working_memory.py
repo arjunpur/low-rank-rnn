@@ -1,12 +1,14 @@
 """Plots for parametric working-memory experiments."""
 
 from collections.abc import Sequence
+from numbers import Real as RealNumber
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import TwoSlopeNorm
 import numpy as np
-import numpy.typing as npt
+from jaxtyping import Real
 
+from low_rank_rnn._typing import typechecked
 from low_rank_rnn.plotting.style import (
     COLORS,
     DECISION_WINDOW_STYLE,
@@ -18,9 +20,10 @@ from low_rank_rnn.plotting.style import (
 )
 
 
+@typechecked
 def _label_frequency_axes(
     axis: plt.Axes,
-    frequencies: npt.ArrayLike,
+    frequencies: Real[np.ndarray, "frequency"],
 ) -> None:
     frequencies = np.asarray(frequencies)
     axis.set_xticks(range(len(frequencies)), labels=frequencies.astype(int))
@@ -28,12 +31,13 @@ def _label_frequency_axes(
     axis.set(xlabel=r"$f_2$ (Hz)", ylabel=r"$f_1$ (Hz)")
 
 
+@typechecked
 def plot_memory_trials(
-    frequency_pairs: npt.ArrayLike,
-    inputs: npt.ArrayLike,
-    targets: npt.ArrayLike,
-    target_matrix: npt.ArrayLike,
-    frequencies: npt.ArrayLike,
+    frequency_pairs: Real[np.ndarray, "trial 2"],
+    inputs: Real[np.ndarray, "trial time"],
+    targets: Real[np.ndarray, "trial"],
+    target_matrix: Real[np.ndarray, "frequency frequency"],
+    frequencies: Real[np.ndarray, "frequency"],
     *,
     first_window: tuple[int, int],
     second_window: tuple[int, int],
@@ -77,12 +81,13 @@ def plot_memory_trials(
     return fig, axes
 
 
+@typechecked
 def plot_memory_behavior(
-    rank_two_losses: npt.ArrayLike,
-    rank_one_losses: npt.ArrayLike,
-    target_matrix: npt.ArrayLike,
-    predictions: npt.ArrayLike,
-    frequencies: npt.ArrayLike,
+    rank_two_losses: Real[np.ndarray, "rank_two_epoch"] | Sequence[float],
+    rank_one_losses: Real[np.ndarray, "rank_one_epoch"] | Sequence[float],
+    target_matrix: Real[np.ndarray, "frequency frequency"],
+    predictions: Real[np.ndarray, "prediction"],
+    frequencies: Real[np.ndarray, "frequency"],
     *,
     mse: float,
     r_squared: float,
@@ -153,13 +158,14 @@ def plot_memory_behavior(
     return fig, axes
 
 
+@typechecked
 def plot_latent_sweeps(
-    first_coordinates: npt.ArrayLike,
-    second_coordinates: npt.ArrayLike,
-    frequencies: npt.ArrayLike,
+    first_coordinates: Real[np.ndarray, "frequency time 2"],
+    second_coordinates: Real[np.ndarray, "frequency time 2"],
+    frequencies: Real[np.ndarray, "frequency"],
     *,
-    time_values: npt.ArrayLike,
-    window_spans: Sequence[tuple[float, float]],
+    time_values: Real[np.ndarray, "plot_time"],
+    window_spans: Sequence[tuple[RealNumber, RealNumber]],
     column_titles: tuple[str, str],
     row_labels: tuple[str, str],
     title: str,
@@ -220,9 +226,12 @@ def plot_latent_sweeps(
     return fig, axes
 
 
+@typechecked
 def plot_latent_plane(
-    coordinates: npt.ArrayLike,
-    frequencies: npt.ArrayLike,
+    coordinates: Real[np.ndarray, "frequency time 2"],
+    frequencies: Real[np.ndarray, "frequency"],
+    *,
+    colorbar_label: str = "swept frequency (Hz)",
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot rank-two trajectories in the recurrent plane."""
     coordinates = np.asarray(coordinates)
@@ -232,71 +241,126 @@ def plot_latent_plane(
     for frequency, trajectory in zip(frequencies, coordinates):
         color = FREQUENCY_CMAP(norm(frequency))
         axis.plot(trajectory[:, 0], trajectory[:, 1], color=color)
-        axis.scatter(*trajectory[-1, :2], color=color, s=32)
+        arrow_step = 2 * len(trajectory) // 3
+        arrow_start = max(0, arrow_step - 3)
+        axis.annotate(
+            "",
+            xy=trajectory[arrow_step, :2],
+            xytext=trajectory[arrow_start, :2],
+            arrowprops={
+                "arrowstyle": "-|>",
+                "color": color,
+                "linewidth": 1.2,
+                "mutation_scale": 8,
+            },
+        )
     axis.set(
         xlabel=r"$\kappa_1$",
         ylabel=r"$\kappa_2$",
         title=r"Population trajectories in the $m_1$–$m_2$ plane",
     )
+    colorbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=FREQUENCY_CMAP),
+        ax=axis,
+        pad=0.02,
+    )
+    colorbar.set_label(colorbar_label)
     fig.tight_layout()
     return fig, axis
 
 
-def plot_memory_reductions(
+@typechecked
+def plot_gaussian_pipeline(
     trained_mse: float,
-    rank_one_mse: float,
-    fitted_mse: float,
-    paper_mse: float,
-    sampled_mses: npt.ArrayLike,
-    targets: npt.ArrayLike,
-    trained_decisions: npt.ArrayLike,
-    fitted_decisions: npt.ArrayLike,
-    paper_decisions: npt.ArrayLike,
+    full_covariance_mse: float,
+    diagonal_mse: float,
+    sampled_mses: Real[np.ndarray, "sample"],
+    targets: Real[np.ndarray, "trial"],
+    trained_decisions: Real[np.ndarray, "trial"],
+    full_covariance_decisions: Real[np.ndarray, "trial"],
+    diagonal_decisions: Real[np.ndarray, "trial"],
     *,
     threshold: float,
+    title: str,
+    score_label: str,
+    readout_title: str,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Compare trained, sampled, and reduced working-memory systems."""
+    """Compare a trained RNN, two circuits, and finite Gaussian samples."""
     sampled_mses = np.asarray(sampled_mses)
     categories = (
-        "rank 1\ncontrol",
-        "rank 2\ntrained",
-        "fitted Gaussian\ncircuit",
-        "paper\ncircuit",
-        "Gaussian\nsamples",
+        "source\ntrained RNN",
+        "full-covariance\nGaussian circuit",
+        "handout diagonal\ncircuit",
+        "finite Gaussian-\nsampled RNNs",
     )
-    values = (rank_one_mse, trained_mse, fitted_mse, paper_mse)
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)
+    for position, score, color, marker, label in (
+        (0, trained_mse, COLORS["blue"], "D", "source trained RNN"),
+        (
+            1,
+            full_covariance_mse,
+            COLORS["purple"],
+            "s",
+            "full-covariance Gaussian circuit",
+        ),
+        (
+            2,
+            diagonal_mse,
+            COLORS["gold"],
+            "^",
+            "handout diagonal circuit",
+        ),
+    ):
+        axes[0].scatter(
+            position,
+            score,
+            color=color,
+            marker=marker,
+            s=70,
+            zorder=3,
+            label=label,
+        )
+    sample_positions = 3 + np.linspace(-0.16, 0.16, len(sampled_mses))
     axes[0].scatter(
-        np.arange(len(values)),
-        values,
-        color=COLORS["blue"],
-        s=70,
-        zorder=3,
-    )
-    axes[0].scatter(
-        4 + np.linspace(-0.18, 0.18, len(sampled_mses)),
+        sample_positions,
         sampled_mses,
-        color=COLORS["purple"],
+        color=COLORS["gray"],
         edgecolor="white",
         linewidth=0.5,
         s=48,
         zorder=3,
     )
+    axes[0].plot(
+        (sample_positions.min(), sample_positions.max()),
+        (np.median(sampled_mses),) * 2,
+        color=COLORS["gray"],
+        linewidth=2.5,
+        label=f"finite-sample median (n={len(sampled_mses)})",
+    )
     axes[0].axhline(
         threshold,
-        color=COLORS["gold"],
-        linestyle="--",
+        **REFERENCE_LINE_STYLE,
         label=f"target = {threshold:g}",
     )
     axes[0].set_yscale("log")
     axes[0].set_xticks(range(len(categories)), labels=categories)
-    axes[0].set(ylabel="condition-balanced MSE", title="Behavioral comparison")
+    axes[0].set(ylabel=score_label, title="Task performance")
     axes[0].legend()
 
     for decisions, color, marker, label in (
-        (trained_decisions, COLORS["blue"], "o", "trained RNN"),
-        (fitted_decisions, COLORS["purple"], "s", "fitted Gaussian circuit"),
-        (paper_decisions, COLORS["gold"], "^", "paper circuit"),
+        (trained_decisions, COLORS["blue"], "o", "source trained RNN"),
+        (
+            full_covariance_decisions,
+            COLORS["purple"],
+            "s",
+            "full-covariance Gaussian circuit",
+        ),
+        (
+            diagonal_decisions,
+            COLORS["gold"],
+            "^",
+            "handout diagonal circuit",
+        ),
     ):
         axes[1].scatter(
             targets,
@@ -309,8 +373,10 @@ def plot_memory_reductions(
         )
     limit = 1.05 * max(
         1.0,
-        np.max(np.abs(fitted_decisions)),
-        np.max(np.abs(paper_decisions)),
+        np.max(np.abs(targets)),
+        np.max(np.abs(trained_decisions)),
+        np.max(np.abs(full_covariance_decisions)),
+        np.max(np.abs(diagonal_decisions)),
     )
     axes[1].plot(
         (-limit, limit),
@@ -323,7 +389,9 @@ def plot_memory_reductions(
         ylim=(-limit, limit),
         xlabel="target",
         ylabel="decision",
-        title="Full and reduced readouts",
+        title=readout_title,
     )
+    axes[1].set_aspect("equal", adjustable="box")
     axes[1].legend()
+    fig.suptitle(title)
     return fig, axes

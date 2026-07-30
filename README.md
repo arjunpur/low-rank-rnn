@@ -69,5 +69,12 @@ Trickle setup records runtime values and tensor shapes:
 npm install -g trickle-cli@0.1.223
 uv sync
 source .venv/bin/activate
-trickle run python path/to/script.py
+trickle run --include low_rank_rnn python path/to/script.py
+```
+
+To observe every tested library path in one run, use the
+**Trickle: Run test suite** editor task or:
+
+```bash
+trickle run --include low_rank_rnn python -m unittest discover -s tests -v
 ```

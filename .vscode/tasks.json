@@ -7,12 +7,39 @@
       "command": "trickle",
       "args": [
         "run",
+        "--include",
+        "low_rank_rnn",
         "python",
         "${relativeFile}"
       ],
       "options": {
         "cwd": "${workspaceFolder}",
         "env": {
+          "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Trickle: Run test suite",
+      "type": "process",
+      "command": "trickle",
+      "args": [
+        "run",
+        "--include",
+        "low_rank_rnn",
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "MPLCONFIGDIR": "${workspaceFolder}/.matplotlib-cache",
           "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
         }
       },

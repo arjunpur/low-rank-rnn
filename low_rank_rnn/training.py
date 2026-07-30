@@ -3,9 +3,8 @@
 from collections.abc import Sequence
 
 import numpy as np
-import numpy.typing as npt
 import torch
-from jaxtyping import Float, Real
+from jaxtyping import Float, Integer, Real
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -17,6 +16,7 @@ from low_rank_rnn.data.working_memory import (
 )
 
 
+@typechecked
 def _decision_window(
     outputs: Float[torch.Tensor, "batch time"],
     decision_steps: int,
@@ -101,10 +101,10 @@ def masked_decision_loss(
 @typechecked
 def train_variable_delay(
     model: nn.Module,
-    stages: Sequence[npt.ArrayLike] = (DELAYS,),
+    stages: Sequence[Integer[np.ndarray, "_"]] = (DELAYS,),
     *,
     rng: np.random.Generator,
-    frequencies: npt.ArrayLike = FREQUENCIES,
+    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
     num_trials: int = 256,
     epochs_per_stage: int = 300,
     learning_rate: float = 5e-3,

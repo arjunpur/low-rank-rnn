@@ -7,9 +7,8 @@ trials are padded to a common length and carry a per-trial decision mask.
 """
 
 import numpy as np
-import numpy.typing as npt
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Integer, Real
 
 from low_rank_rnn._typing import typechecked
 
@@ -38,7 +37,9 @@ VARIABLE_TRIAL_STEPS = (
 
 
 @typechecked
-def stimulus_amplitudes(frequencies: npt.ArrayLike) -> Float[np.ndarray, "..."]:
+def stimulus_amplitudes(
+    frequencies: Real[np.ndarray, "..."],
+) -> Float[np.ndarray, "..."]:
     """Center and scale frequencies onto the network's scalar input."""
     values = np.asarray(frequencies, dtype=float)
     return (values - FREQUENCY_CENTER) / FREQUENCY_RANGE
@@ -46,7 +47,7 @@ def stimulus_amplitudes(frequencies: npt.ArrayLike) -> Float[np.ndarray, "..."]:
 
 @typechecked
 def make_fixed_delay_trials(
-    frequency_pairs: npt.ArrayLike,
+    frequency_pairs: Real[np.ndarray, "trial 2"],
     *,
     second_start: int = FIXED_SECOND_WINDOW[0],
 ) -> tuple[
@@ -74,22 +75,25 @@ def sample_fixed_delay_trials(
     num_trials: int,
     *,
     rng: np.random.Generator,
-    frequencies: npt.ArrayLike = FREQUENCIES,
+    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
 ) -> tuple[
     Float[np.ndarray, "trial 2"],
     Float[np.ndarray, "trial time"],
     Float[np.ndarray, "trial"],
 ]:
     """Sample frequency pairs and build fixed-delay trials."""
-    pairs = rng.choice(np.asarray(frequencies), size=(num_trials, 2))
+    pairs = rng.choice(
+        np.asarray(frequencies, dtype=float),
+        size=(num_trials, 2),
+    )
     inputs, targets = make_fixed_delay_trials(pairs)
     return pairs, inputs, targets
 
 
 @typechecked
 def make_variable_delay_trials(
-    frequencies: npt.ArrayLike,
-    delays: npt.ArrayLike,
+    frequencies: Real[np.ndarray, "trial 2"],
+    delays: Integer[np.ndarray, "trial"],
 ) -> tuple[
     Float[torch.Tensor, "trial time"],
     Float[torch.Tensor, "trial"],
@@ -126,10 +130,10 @@ def make_variable_delay_trials(
 @typechecked
 def sample_variable_delay_trials(
     num_trials: int,
-    delays: npt.ArrayLike = DELAYS,
+    delays: Integer[np.ndarray, "delay"] = DELAYS,
     *,
     rng: np.random.Generator,
-    frequencies: npt.ArrayLike = FREQUENCIES,
+    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
 ) -> tuple[
     Float[torch.Tensor, "trial time"],
     Float[torch.Tensor, "trial"],
@@ -146,17 +150,17 @@ def sample_variable_delay_trials(
 
 @typechecked
 def frequency_pair_grid(
-    frequencies: npt.ArrayLike = FREQUENCIES,
+    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
 ) -> Float[np.ndarray, "pair 2"]:
     """Return every ordered pair of task frequencies."""
-    values = np.asarray(frequencies)
+    values = np.asarray(frequencies, dtype=float)
     grid = np.meshgrid(values, values, indexing="ij")
     return np.array(grid).reshape(2, -1).T
 
 
 @typechecked
 def frequency_sweeps(
-    frequencies: npt.ArrayLike = FREQUENCIES,
+    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
     *,
     neutral_frequency: float = FREQUENCY_CENTER,
 ) -> tuple[

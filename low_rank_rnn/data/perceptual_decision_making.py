@@ -3,10 +3,11 @@
 from collections.abc import Sequence
 
 import numpy as np
-import numpy.typing as npt
-from jaxtyping import Float, Integer
+from jaxtyping import Float, Integer, Real
 
 from low_rank_rnn._typing import typechecked
+
+
 TRIAL_STEPS = 75
 STIMULUS_WINDOW = (5, 45)
 STIMULUS_STRENGTHS = np.concatenate(
@@ -24,7 +25,7 @@ def generate_trials(
     num_trials: int,
     trial_steps: int = TRIAL_STEPS,
     *,
-    stimulus_strengths: npt.ArrayLike = STIMULUS_STRENGTHS,
+    stimulus_strengths: Real[np.ndarray, "strength"] = STIMULUS_STRENGTHS,
     stimulus_window: Sequence[int] = STIMULUS_WINDOW,
     noise_mean: float = NOISE_MEAN,
     noise_std: float = NOISE_STD,
@@ -54,7 +55,7 @@ def generate_trials(
 
 @typechecked
 def mean_stimulus(
-    inputs: npt.ArrayLike,
+    inputs: Real[np.ndarray, "trial time"],
     stimulus_window: Sequence[int] = STIMULUS_WINDOW,
 ) -> Float[np.ndarray, "trial"]:
     """Average each trial's input over the inclusive stimulus window."""
@@ -64,9 +65,9 @@ def mean_stimulus(
 
 @typechecked
 def representative_trial_indices(
-    inputs: npt.ArrayLike,
-    labels: npt.ArrayLike,
-) -> np.ndarray:
+    inputs: Real[np.ndarray, "trial time"],
+    labels: Real[np.ndarray, "trial"],
+) -> Integer[np.ndarray, "selection"]:
     """Select weak and strong examples for both choices."""
     means = mean_stimulus(inputs)
     labels = np.asarray(labels)

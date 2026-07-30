@@ -54,6 +54,10 @@ class LowRankRNNTests(unittest.TestCase):
 
 
 class WorkingMemoryDataTests(unittest.TestCase):
+    def test_fixed_delay_trials_require_frequency_pairs(self) -> None:
+        with self.assertRaises(TypeCheckError):
+            working_memory.make_fixed_delay_trials(np.ones((3, 1)))
+
     def test_fixed_delay_trials_place_both_stimuli_and_target(self) -> None:
         pairs = np.array(((10, 34), (30, 14)))
 
@@ -268,17 +272,44 @@ class AnalysisTests(unittest.TestCase):
 
         np.testing.assert_allclose(projected, states.numpy())
 
-    def test_regression_metrics_and_explained_variance(self) -> None:
+    def test_regression_metrics_and_principal_component_analysis(self) -> None:
         mse, r_squared = analysis.regression_metrics(
             np.array((-1.0, 1.0)),
             np.array((-1.0, 1.0)),
         )
-        variance = analysis.explained_variance(
-            np.array([[[0.0, 0.0], [1.0, 0.0]]])
+        states = np.array([[[0.0, 0.0], [1.0, 0.0]]])
+        variance, components, projected = analysis.principal_component_analysis(
+            states
         )
 
         self.assertEqual((mse, r_squared), (0.0, 1.0))
         np.testing.assert_allclose(variance, (1.0, 0.0))
+        np.testing.assert_allclose(
+            np.abs(components),
+            np.eye(2),
+        )
+        np.testing.assert_allclose(
+            projected[..., 1],
+            0,
+        )
+        np.testing.assert_allclose(
+            analysis.explained_variance(states),
+            variance,
+        )
+
+    def test_masked_regression_metrics_use_each_decision_window(self) -> None:
+        outputs = np.array(((1.0, 9.0, 9.0), (9.0, 2.0, 2.0)))
+        targets = np.array((1.0, 2.0))
+        decision_mask = np.array(((1.0, 0.0, 0.0), (0.0, 1.0, 1.0)))
+
+        mse, r_squared, decisions = analysis.masked_regression_metrics(
+            outputs,
+            targets,
+            decision_mask,
+        )
+
+        self.assertEqual((mse, r_squared), (0.0, 1.0))
+        np.testing.assert_allclose(decisions, targets)
 
     def test_fixed_point_search_classifies_a_double_well_flow(self) -> None:
         grid, flow, points, slopes = analysis.find_fixed_points_1d(
@@ -292,6 +323,16 @@ class AnalysisTests(unittest.TestCase):
 
 
 class MeanFieldTests(unittest.TestCase):
+    def test_gaussian_circuit_requires_square_loading_covariance(self) -> None:
+        with self.assertRaises(TypeCheckError):
+            mean_field.simulate_gaussian_circuit(
+                np.zeros((3, 4)),
+                ("I", "n", "m", "w"),
+                np.zeros(4),
+                np.zeros((4, 3)),
+                step_size=0.2,
+            )
+
     def test_gaussian_circuit_returns_rank_generic_histories(self) -> None:
         names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
 
@@ -307,6 +348,49 @@ class MeanFieldTests(unittest.TestCase):
         self.assertEqual(kappa.shape, (3, 4, 2))
         self.assertEqual(filtered.shape, (3, 4))
         np.testing.assert_allclose(outputs, 0)
+
+    def test_diagonal_circuit_matches_full_circuit_when_assumptions_hold(
+        self,
+    ) -> None:
+        names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
+        covariance = np.eye(6)
+        for first, second, value in (
+            (1, 3, 0.4),
+            (2, 4, 0.2),
+            (1, 0, 0.3),
+            (2, 0, 0.5),
+            (5, 3, 0.6),
+            (5, 4, -0.4),
+        ):
+            covariance[first, second] = value
+            covariance[second, first] = value
+        inputs = np.array(((0.5, 0.0, -0.25), (-0.5, 0.25, 0.0)))
+
+        full = mean_field.simulate_gaussian_circuit(
+            inputs,
+            names,
+            np.zeros(6),
+            covariance,
+            step_size=0.2,
+        )
+        diagonal = mean_field.simulate_diagonal_circuit(
+            inputs,
+            names,
+            covariance,
+            step_size=0.2,
+        )
+
+        for full_values, diagonal_values in zip(full, diagonal, strict=True):
+            np.testing.assert_allclose(full_values, diagonal_values)
+
+    def test_diagonal_circuit_requires_rank_two(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires rank two"):
+            mean_field.simulate_diagonal_circuit(
+                np.zeros((1, 2)),
+                ("I", "n", "m", "w"),
+                np.eye(4),
+                step_size=0.2,
+            )
 
 
 if __name__ == "__main__":

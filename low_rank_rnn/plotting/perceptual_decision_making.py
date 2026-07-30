@@ -3,27 +3,27 @@
 from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import Patch
 import numpy as np
-import numpy.typing as npt
+from jaxtyping import Integer, Real
 
+from low_rank_rnn._typing import typechecked
 from low_rank_rnn.data.perceptual_decision_making import STIMULUS_WINDOW
 from low_rank_rnn.plotting.style import (
     CHOICE_COLORS,
     COLORS,
     DECISION_WINDOW_STYLE,
     REFERENCE_LINE_STYLE,
-    SIGNED_VALUE_CMAP,
     STIMULUS_WINDOW_STYLE,
 )
 
 
+@typechecked
 def plot_decision_trials(
-    inputs: npt.ArrayLike,
-    labels: npt.ArrayLike,
+    inputs: Real[np.ndarray, "trial time"],
+    labels: Real[np.ndarray, "trial"],
     *,
-    mean_stimuli: npt.ArrayLike | None = None,
+    mean_stimuli: Real[np.ndarray, "trial"] | None = None,
     decision_steps: int = 15,
     stimulus_window: Sequence[int] = STIMULUS_WINDOW,
 ) -> tuple[plt.Figure, np.ndarray]:
@@ -74,11 +74,12 @@ def plot_decision_trials(
     return fig, axes
 
 
+@typechecked
 def plot_decision_summary(
-    losses: npt.ArrayLike,
-    stimulus_estimates: npt.ArrayLike,
-    decisions: npt.ArrayLike,
-    labels: npt.ArrayLike,
+    losses: Real[np.ndarray, "epoch"] | Sequence[float],
+    stimulus_estimates: Real[np.ndarray, "trial"],
+    decisions: Real[np.ndarray, "trial"],
+    labels: Real[np.ndarray, "trial"],
     *,
     accuracy: float,
     loss_threshold: float,
@@ -122,10 +123,11 @@ def plot_decision_summary(
     return fig, axes
 
 
+@typechecked
 def plot_trial_outputs(
-    inputs: npt.ArrayLike,
-    labels: npt.ArrayLike,
-    outputs: npt.ArrayLike,
+    inputs: Real[np.ndarray, "trial time"],
+    labels: Real[np.ndarray, "trial"],
+    outputs: Real[np.ndarray, "trial time"],
     *,
     stimulus_window: Sequence[int] = STIMULUS_WINDOW,
     decision_steps: int = 15,
@@ -175,44 +177,12 @@ def plot_trial_outputs(
     return fig, axes
 
 
-def plot_hidden_rates(
-    states: npt.ArrayLike,
-    *,
-    decision_steps: int,
-    stimulus_window: Sequence[int] = STIMULUS_WINDOW,
-) -> tuple[plt.Figure, plt.Axes]:
-    """Plot hidden rates for one trial, ordered by their final value."""
-    rates = np.tanh(np.asarray(states))
-    unit_order = np.argsort(rates[-1])
-    fig, axis = plt.subplots(figsize=(10, 4.2))
-    image = axis.imshow(
-        rates[:, unit_order].T,
-        aspect="auto",
-        origin="lower",
-        cmap=SIGNED_VALUE_CMAP,
-        norm=TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1),
-    )
-    axis.axvspan(*stimulus_window, **STIMULUS_WINDOW_STYLE)
-    axis.axvspan(
-        len(rates) - decision_steps,
-        len(rates) - 1,
-        **DECISION_WINDOW_STYLE,
-    )
-    axis.set(
-        xlabel="time step",
-        ylabel="unit (sorted by final rate)",
-        title="Hidden rates on one held-out trial",
-    )
-    fig.colorbar(image, ax=axis, label=r"$\tanh(x_i)$")
-    fig.tight_layout()
-    return fig, axis
-
-
+@typechecked
 def plot_output_comparison(
-    full_outputs: npt.ArrayLike,
-    reduced_outputs: npt.ArrayLike,
-    labels: npt.ArrayLike,
-    trial_indices: npt.ArrayLike,
+    full_outputs: Real[np.ndarray, "trial time"],
+    reduced_outputs: Real[np.ndarray, "trial time"],
+    labels: Real[np.ndarray, "trial"],
+    trial_indices: Integer[np.ndarray, "selection"],
     *,
     decision_steps: int,
 ) -> tuple[plt.Figure, np.ndarray]:

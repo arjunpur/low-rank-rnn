@@ -15,6 +15,7 @@ tmp/
 # Local Python environment
 .venv/
 .trickle/
+.matplotlib-cache/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
