@@ -1,9 +1,4 @@
-"""Project-wide Matplotlib styling."""
-
-from __future__ import annotations
-
-from collections.abc import Iterator
-from contextlib import contextmanager
+"""Project-wide Matplotlib styling and semantic colors."""
 
 import matplotlib as mpl
 
@@ -24,10 +19,6 @@ PALETTE = tuple(COLORS.values())
 CHOICE_COLORS = {
     -1: COLORS["blue"],
     1: COLORS["red"],
-}
-MEAN_CHOICE_COLORS = {
-    -1: "#114477",
-    1: "#CC3344",
 }
 
 # A separate diverging palette keeps covariance sign distinct from choice.
@@ -52,6 +43,21 @@ RESIDUAL_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "residual",
     (COLORS["blue"], "#F7F7F7", COLORS["gold"]),
 )
+FREQUENCY_CMAP = mpl.colormaps["viridis"]
+
+STIMULUS_WINDOW_STYLE = {
+    "color": COLORS["gray"],
+    "alpha": 0.12,
+}
+DECISION_WINDOW_STYLE = {
+    "color": COLORS["green"],
+    "alpha": 0.10,
+}
+REFERENCE_LINE_STYLE = {
+    "color": COLORS["gray"],
+    "linestyle": "--",
+    "linewidth": 1,
+}
 
 
 STYLE = {
@@ -125,10 +131,3 @@ STYLE = {
 def set_plot_style() -> None:
     """Apply the project style to all subsequent Matplotlib figures."""
     mpl.rcParams.update(STYLE)
-
-
-@contextmanager
-def plot_style() -> Iterator[None]:
-    """Apply the project style temporarily within a ``with`` block."""
-    with mpl.rc_context(STYLE):
-        yield

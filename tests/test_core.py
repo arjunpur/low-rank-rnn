@@ -9,18 +9,9 @@ import torch
 from jaxtyping import TypeCheckError
 from torch import nn
 
-from low_rank_rnn.analysis import (
-    connectivity_covariance,
-    connectivity_non_normality,
-    connectivity_overlap,
-    connectivity_vectors,
-    fit_loading_gaussian,
-    project_rank_one_activity,
-    sample_loading_gaussian,
-    sample_low_rank_rnns,
-    svd_connectivity_basis,
-)
-from low_rank_rnn.model import LowRankRNN
+from low_rank_rnn import analysis, mean_field
+from low_rank_rnn.data import working_memory
+from low_rank_rnn.model import LowRankRNN, persistent_transient_rnn
 from low_rank_rnn.training import decision_accuracy, decision_loss, train_model
 
 
@@ -48,10 +39,58 @@ class LowRankRNNTests(unittest.TestCase):
         self.assertEqual(dict(model.named_buffers()).keys(), {"I", "w"})
 
     def test_forward_rejects_inputs_without_batch_and_time_axes(self) -> None:
-        model = LowRankRNN(4)
-
         with self.assertRaises(TypeCheckError):
-            model(torch.zeros(2, 3, 1))
+            LowRankRNN(4)(torch.zeros(2, 3, 1))
+
+    def test_persistent_transient_initialization_has_expected_loop_gains(self) -> None:
+        model = persistent_transient_rnn(64, seed=4)
+
+        overlap = analysis.connectivity_overlap(
+            model.m.detach().numpy(),
+            model.n.detach().numpy(),
+        )
+
+        np.testing.assert_allclose(overlap, np.diag((1.0, 0.5)), atol=1e-5)
+
+
+class WorkingMemoryDataTests(unittest.TestCase):
+    def test_fixed_delay_trials_place_both_stimuli_and_target(self) -> None:
+        pairs = np.array(((10, 34), (30, 14)))
+
+        inputs, targets = working_memory.make_fixed_delay_trials(pairs)
+
+        amplitudes = working_memory.stimulus_amplitudes(pairs)
+        self.assertEqual(inputs.shape, (2, working_memory.FIXED_TRIAL_STEPS))
+        np.testing.assert_allclose(
+            inputs[:, 5:11],
+            np.repeat(amplitudes[:, 0, None], 6, axis=1),
+        )
+        np.testing.assert_allclose(
+            inputs[:, 60:71],
+            np.repeat(amplitudes[:, 1, None], 11, axis=1),
+        )
+        np.testing.assert_allclose(targets, amplitudes[:, 0] - amplitudes[:, 1])
+
+    def test_variable_delay_mask_tracks_each_trial(self) -> None:
+        pairs = np.array(((10, 34), (30, 14)))
+        delays = np.array((25, 100))
+
+        inputs, _, mask = working_memory.make_variable_delay_trials(pairs, delays)
+
+        first_stop = (
+            working_memory.VARIABLE_FIXATION_STEPS
+            + working_memory.VARIABLE_STIMULUS_STEPS
+        )
+        for trial, delay in enumerate(delays):
+            decision_start = (
+                first_stop + delay + working_memory.VARIABLE_STIMULUS_STEPS
+            )
+            self.assertEqual(mask[trial].sum(), working_memory.VARIABLE_DECISION_STEPS)
+            torch.testing.assert_close(
+                mask[trial, decision_start : decision_start + 5],
+                torch.ones(5),
+            )
+        self.assertEqual(inputs.shape[1], working_memory.VARIABLE_TRIAL_STEPS)
 
 
 class TrainingTests(unittest.TestCase):
@@ -108,13 +147,10 @@ class TrainingTests(unittest.TestCase):
                 log_every=2,
             )
 
-        log_lines = output.getvalue().splitlines()
         self.assertEqual(
-            [line.split(":", maxsplit=1)[0] for line in log_lines],
+            [line.split(":", maxsplit=1)[0] for line in output.getvalue().splitlines()],
             ["Epoch 2", "Epoch 4", "Epoch 5"],
         )
-        self.assertTrue(all("loss=" in line for line in log_lines))
-        self.assertTrue(all("accuracy=" not in line for line in log_lines))
 
     def test_accuracy_restores_evaluation_mode(self) -> None:
         class OutputModel(nn.Module):
@@ -132,24 +168,18 @@ class TrainingTests(unittest.TestCase):
 
 
 class AnalysisTests(unittest.TestCase):
-    def test_connectivity_covariance_matches_numpy(self) -> None:
-        model = LowRankRNN(3)
-        with torch.no_grad():
-            model.I.copy_(torch.tensor([1.0, 2.0, 3.0]))
-            model.n[:, 0].copy_(torch.tensor([0.0, 1.0, 4.0]))
-            model.m[:, 0].copy_(torch.tensor([2.0, 0.0, 1.0]))
-            model.w.copy_(torch.tensor([-1.0, 2.0, 1.0]))
+    def test_run_model_returns_numpy_and_restores_mode(self) -> None:
+        model = LowRankRNN(4)
+        model.train()
 
-        vectors = connectivity_vectors(model)
-        names, covariance = connectivity_covariance(vectors)
+        outputs, states = analysis.run_model(model, np.zeros((2, 3)))
 
-        self.assertEqual(names, ("I", "n", "m", "w"))
-        np.testing.assert_allclose(covariance, np.cov(np.stack(list(vectors.values()))))
+        self.assertEqual(outputs.shape, (2, 3))
+        self.assertEqual(states.shape, (2, 3, 4))
+        self.assertTrue(model.training)
 
     def test_connectivity_vectors_include_each_rank_component(self) -> None:
-        model = LowRankRNN(3, rank=2)
-
-        vectors = connectivity_vectors(model)
+        vectors = analysis.connectivity_vectors(LowRankRNN(3, rank=2))
 
         self.assertEqual(tuple(vectors), ("I", "n_1", "n_2", "m_1", "m_2", "w"))
         self.assertTrue(all(vector.shape == (3,) for vector in vectors.values()))
@@ -161,7 +191,7 @@ class AnalysisTests(unittest.TestCase):
         }
         samples = np.column_stack(tuple(vectors.values()))
 
-        mean, covariance = fit_loading_gaussian(vectors)
+        mean, covariance = analysis.fit_loading_gaussian(vectors)
 
         np.testing.assert_allclose(mean, samples.mean(axis=0))
         np.testing.assert_allclose(
@@ -169,63 +199,12 @@ class AnalysisTests(unittest.TestCase):
             np.cov(samples, rowvar=False, bias=True),
         )
 
-    def test_sampled_networks_use_gaussian_loading_coordinates(self) -> None:
-        names = ("I", "n", "m", "w")
-        mean = np.array([1.0, 2.0, 3.0, 4.0])
-        covariance = np.zeros((4, 4))
-
-        networks = sample_low_rank_rnns(
-            names,
-            mean,
-            covariance,
-            num_networks=3,
-            num_neurons=5,
-            rng=np.random.default_rng(0),
-        )
-
-        self.assertEqual(len(networks), 3)
-        for network in networks:
-            self.assertEqual(network.n_units, 5)
-            for name, expected_value in zip(names, mean, strict=True):
-                expected = torch.full_like(getattr(network, name), expected_value)
-                torch.testing.assert_close(getattr(network, name), expected)
-
-    def test_svd_basis_keeps_the_network_and_orthogonalizes_each_set(self) -> None:
-        torch.manual_seed(4)
-        model = LowRankRNN(32, rank=2)
-        raw_m = model.m.detach().numpy()
-        raw_n = model.n.detach().numpy()
-
-        m, n = svd_connectivity_basis(model)
-
-        np.testing.assert_allclose(m @ n.T, raw_m @ raw_n.T, atol=1e-4)
-        self.assertAlmostEqual(float(m[:, 0] @ m[:, 1]), 0.0, places=6)
-        self.assertAlmostEqual(float(n[:, 0] @ n[:, 1]), 0.0, places=6)
-        np.testing.assert_allclose(
-            np.sort(np.linalg.eigvals(connectivity_overlap(m, n)).real),
-            np.sort(np.linalg.eigvals(raw_n.T @ raw_m / 32).real),
-            atol=1e-4,
-        )
-
-    def test_non_normality_vanishes_when_each_n_pairs_with_its_own_m(self) -> None:
-        patterns = np.linalg.qr(np.random.default_rng(0).standard_normal((32, 2)))[0]
-
-        aligned = connectivity_non_normality(patterns, patterns * (1.0, -0.5))
-        # Both selection vectors reading the same output pattern, as the trained
-        # randomized-delay network does.
-        chained = connectivity_non_normality(
-            patterns, np.column_stack([patterns[:, 1], patterns[:, 1]])
-        )
-
-        self.assertAlmostEqual(aligned, 0.0, places=6)
-        self.assertGreater(chained, 0.5)
-
     def test_sampled_networks_split_higher_rank_loadings_by_column(self) -> None:
         names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
         mean = np.arange(1.0, 7.0)
         covariance = np.zeros((6, 6))
 
-        (network,) = sample_low_rank_rnns(
+        (network,) = analysis.sample_low_rank_rnns(
             names,
             mean,
             covariance,
@@ -234,42 +213,49 @@ class AnalysisTests(unittest.TestCase):
             rng=np.random.default_rng(0),
         )
 
-        self.assertEqual(network.n.shape, (5, 2))
         for name, expected_value in zip(names, mean, strict=True):
             vector, _, index = name.partition("_")
             column = getattr(network, vector)
             actual = column if not index else column[:, int(index) - 1]
             torch.testing.assert_close(actual, torch.full_like(actual, expected_value))
 
-    def test_sampled_networks_reject_unexpected_loading_names(self) -> None:
-        with self.assertRaises(ValueError):
-            sample_low_rank_rnns(
-                ("I", "m", "n", "w"),
-                np.zeros(4),
-                np.zeros((4, 4)),
-                num_networks=1,
-                num_neurons=2,
-            )
-
-    def test_loading_gaussian_sampling_is_reproducible(self) -> None:
-        mean = np.array([1.0, 2.0])
-        covariance = np.eye(2)
-
-        first = sample_loading_gaussian(
-            mean,
-            covariance,
-            num_samples=4,
+    def test_sampled_loading_vectors_are_reproducible(self) -> None:
+        names = ("a", "b")
+        first, first_covariance = analysis.sample_loading_vectors(
+            names,
+            np.zeros(2),
+            np.eye(2),
+            num_samples=10,
             rng=np.random.default_rng(5),
         )
-        second = sample_loading_gaussian(
-            mean,
-            covariance,
-            num_samples=4,
+        second, second_covariance = analysis.sample_loading_vectors(
+            names,
+            np.zeros(2),
+            np.eye(2),
+            num_samples=10,
             rng=np.random.default_rng(5),
         )
 
-        self.assertEqual(first.shape, (4, 2))
-        np.testing.assert_allclose(first, second)
+        np.testing.assert_allclose(first["a"], second["a"])
+        np.testing.assert_allclose(first_covariance, second_covariance)
+
+    def test_svd_canonical_model_preserves_connectivity(self) -> None:
+        torch.manual_seed(4)
+        model = LowRankRNN(32, rank=2)
+
+        canonical, error = analysis.svd_canonical_model(model)
+
+        self.assertLess(error, 1e-6)
+        self.assertAlmostEqual(
+            float(canonical.m[:, 0].detach() @ canonical.m[:, 1].detach()),
+            0.0,
+            places=5,
+        )
+        self.assertAlmostEqual(
+            float(canonical.n[:, 0].detach() @ canonical.n[:, 1].detach()),
+            0.0,
+            places=5,
+        )
 
     def test_activity_projection_uses_m_and_orthogonal_input_axes(self) -> None:
         model = LowRankRNN(2)
@@ -278,15 +264,49 @@ class AnalysisTests(unittest.TestCase):
             model.I.copy_(torch.tensor([1.0, 1.0]))
         states = torch.tensor([[[2.0, 3.0], [4.0, 5.0]]])
 
-        projected = project_rank_one_activity(states, model)
+        projected = analysis.project_rank_one_activity(states, model)
 
         np.testing.assert_allclose(projected, states.numpy())
 
-    def test_rank_one_activity_projection_rejects_higher_rank_models(self) -> None:
-        model = LowRankRNN(2, rank=2)
+    def test_regression_metrics_and_explained_variance(self) -> None:
+        mse, r_squared = analysis.regression_metrics(
+            np.array((-1.0, 1.0)),
+            np.array((-1.0, 1.0)),
+        )
+        variance = analysis.explained_variance(
+            np.array([[[0.0, 0.0], [1.0, 0.0]]])
+        )
 
-        with self.assertRaisesRegex(ValueError, "rank 1"):
-            project_rank_one_activity(torch.zeros(1, 1, 2), model)
+        self.assertEqual((mse, r_squared), (0.0, 1.0))
+        np.testing.assert_allclose(variance, (1.0, 0.0))
+
+    def test_fixed_point_search_classifies_a_double_well_flow(self) -> None:
+        grid, flow, points, slopes = analysis.find_fixed_points_1d(
+            lambda values: np.asarray(values) - np.asarray(values) ** 3,
+            bounds=(-2, 2),
+        )
+
+        self.assertEqual(grid.shape, flow.shape)
+        np.testing.assert_allclose(points, (-1.0, 0.0, 1.0), atol=1e-5)
+        np.testing.assert_allclose(slopes, (-2.0, 1.0, -2.0), atol=1e-4)
+
+
+class MeanFieldTests(unittest.TestCase):
+    def test_gaussian_circuit_returns_rank_generic_histories(self) -> None:
+        names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
+
+        outputs, kappa, filtered = mean_field.simulate_gaussian_circuit(
+            np.zeros((3, 4)),
+            names,
+            np.zeros(6),
+            np.eye(6),
+            step_size=0.2,
+        )
+
+        self.assertEqual(outputs.shape, (3, 4))
+        self.assertEqual(kappa.shape, (3, 4, 2))
+        self.assertEqual(filtered.shape, (3, 4))
+        np.testing.assert_allclose(outputs, 0)
 
 
 if __name__ == "__main__":

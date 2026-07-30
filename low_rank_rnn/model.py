@@ -52,3 +52,30 @@ class LowRankRNN(nn.Module):
             state = state + self.step_size * (-state + recurrent + external)
 
         return torch.stack(outputs, dim=1), torch.stack(states, dim=1)
+
+
+def persistent_transient_rnn(n_units: int, *, seed: int) -> LowRankRNN:
+    """Initialize the structured two-mode network used for variable delays."""
+    torch.manual_seed(seed)
+    model = LowRankRNN(n_units, rank=2)
+    basis = torch.linalg.qr(torch.randn(n_units, 4)).Q * n_units**0.5
+    input_vector, persistent, transient, readout_residual = basis.T
+
+    with torch.no_grad():
+        model.I.copy_(input_vector)
+        model.m.copy_(torch.column_stack((persistent, transient)))
+        model.n.copy_(
+            torch.column_stack(
+                (
+                    persistent + 0.5 * input_vector,
+                    0.5 * transient + 1.9 * input_vector,
+                )
+            )
+        )
+        residual_gain = (16 - 2.8**2 - 2.2**2) ** 0.5
+        model.w.copy_(
+            2.8 * persistent
+            - 2.2 * transient
+            + residual_gain * readout_residual
+        )
+    return model

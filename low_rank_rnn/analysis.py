@@ -1,25 +1,77 @@
-"""Numerical analysis of trained low-rank RNNs."""
+"""Analysis helpers for trained low-rank RNNs."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 
 import numpy as np
 import numpy.typing as npt
+from scipy.optimize import minimize_scalar
 import torch
 from jaxtyping import Complex, Float
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.data.variable_delay import (
-    DELAYS,
-    FIXATION_STEPS,
-    FREQUENCIES,
-    MAX_FREQUENCY,
-    MIN_FREQUENCY,
-    STIMULUS_STEPS,
-    frequency_pair_grid,
-    make_trials,
-)
+from low_rank_rnn.data.working_memory import make_variable_delay_trials
 from low_rank_rnn.model import LowRankRNN
 from low_rank_rnn.training import masked_decision_loss
+
+
+@torch.no_grad()
+def run_model(
+    model: LowRankRNN,
+    inputs: npt.ArrayLike,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run a model in evaluation mode and return NumPy outputs and states."""
+    was_training = model.training
+    model.eval()
+    tensor = torch.as_tensor(inputs, dtype=torch.float32)
+    outputs, states = model(tensor)
+    model.train(was_training)
+    return outputs.cpu().numpy(), states.cpu().numpy()
+
+
+def decision_values(outputs: npt.ArrayLike, decision_steps: int) -> np.ndarray:
+    """Average scalar readouts over the final decision window."""
+    return np.asarray(outputs)[:, -decision_steps:].mean(axis=1)
+
+
+def regression_metrics(
+    predictions: npt.ArrayLike,
+    targets: npt.ArrayLike,
+) -> tuple[float, float]:
+    """Return mean squared error and coefficient of determination."""
+    predictions = np.asarray(predictions)
+    targets = np.asarray(targets)
+    residuals = predictions - targets
+    mse = float(np.mean(residuals**2))
+    total_variation = np.sum((targets - targets.mean()) ** 2)
+    r_squared = 1 - float(np.sum(residuals**2) / total_variation)
+    return mse, r_squared
+
+
+def network_regression_mses(
+    models: Sequence[LowRankRNN],
+    inputs: npt.ArrayLike,
+    targets: npt.ArrayLike,
+    *,
+    decision_steps: int,
+) -> np.ndarray:
+    """Score several models on one regression task."""
+    scores = []
+    for model in models:
+        outputs, _ = run_model(model, inputs)
+        decisions = decision_values(outputs, decision_steps)
+        scores.append(regression_metrics(decisions, targets)[0])
+    return np.asarray(scores)
+
+
+def explained_variance(states: npt.ArrayLike) -> np.ndarray:
+    """Return PCA explained-variance fractions for a collection of states."""
+    states = np.asarray(states)
+    activity = states.reshape(-1, states.shape[-1])
+    centered = activity - activity.mean(axis=0, keepdims=True)
+    singular_values = np.linalg.svd(centered, compute_uv=False)
+    variances = singular_values**2
+    return variances / variances.sum()
 
 
 @typechecked
@@ -43,70 +95,6 @@ def connectivity_vectors(
 
 
 @typechecked
-def connectivity_covariance(
-    vectors: Mapping[str, npt.ArrayLike],
-) -> tuple[tuple[str, ...], Float[np.ndarray, "vector vector"]]:
-    """Return names and sample covariance of connectivity vectors."""
-    names = tuple(vectors)
-    matrix = np.stack([vectors[name] for name in names])
-    return names, np.cov(matrix)
-
-
-@typechecked
-def svd_connectivity_basis(
-    model: LowRankRNN,
-) -> tuple[Float[np.ndarray, "unit rank"], Float[np.ndarray, "unit rank"]]:
-    """Return ``m`` and ``n`` in the canonical basis of Dubreuil et al.
-
-    Replacing ``m`` by ``mA`` and ``n`` by ``nA^-T`` leaves the connectivity, and
-    therefore the network, completely unchanged while altering every covariance
-    between the two sets. Covariance structure is only comparable once that
-    freedom is fixed. The paper fixes it by requiring the output patterns to be
-    mutually orthogonal, and likewise the input-selection patterns, which the
-    singular-value decomposition of the connectivity determines uniquely.
-    """
-    m = model.m.detach().cpu().numpy().astype(float)
-    n = model.n.detach().cpu().numpy().astype(float)
-    m_basis, m_factor = np.linalg.qr(m)
-    n_basis, n_factor = np.linalg.qr(n)
-    left, values, right = np.linalg.svd(m_factor @ n_factor.T)
-    scale = np.sqrt(values)
-    return m_basis @ left * scale, n_basis @ right.T * scale
-
-
-@typechecked
-def connectivity_overlap(
-    m: npt.ArrayLike,
-    n: npt.ArrayLike,
-) -> Float[np.ndarray, "rank rank"]:
-    """Return C = n^T m / N, the gain of the recurrent loop between modes.
-
-    Entry ``(a, b)`` is how much of mode ``b``, once written into the activity by
-    ``m_b``, comes back as mode ``a`` when read by ``n_a``. Its eigenvalues set
-    the timescales of the latent dynamics: one at 1 is a line attractor.
-    """
-    m, n = np.asarray(m, dtype=float), np.asarray(n, dtype=float)
-    return n.T @ m / len(m)
-
-
-@typechecked
-def connectivity_non_normality(m: npt.ArrayLike, n: npt.ArrayLike) -> float:
-    """Return ||JJ^T - J^TJ|| / ||J||^2 for the low-rank connectivity J.
-
-    Zero when each ``n_r`` pairs with its own ``m_r``, as in the paper's reduced
-    model. Large when the modes are chained, one mode's output being read by
-    another mode's selection vector. Unlike the individual covariances this does
-    not depend on the choice of basis.
-    """
-    m, n = np.asarray(m, dtype=float), np.asarray(n, dtype=float)
-    connectivity = m @ n.T / len(m)
-    commutator = connectivity @ connectivity.T - connectivity.T @ connectivity
-    return float(
-        np.linalg.norm(commutator) / np.linalg.norm(connectivity) ** 2
-    )
-
-
-@typechecked
 def fit_loading_gaussian(
     vectors: Mapping[str, npt.ArrayLike],
 ) -> tuple[
@@ -115,25 +103,53 @@ def fit_loading_gaussian(
 ]:
     """Fit a Gaussian to neuron coordinates in loading space."""
     samples = np.column_stack(tuple(vectors.values()))
-    mean = samples.mean(axis=0)
-    covariance = np.cov(samples, rowvar=False, bias=True)
-    return mean, covariance
+    return samples.mean(axis=0), np.cov(samples, rowvar=False, bias=True)
 
 
-@typechecked
-def sample_loading_gaussian(
+def _sample_loading_gaussian(
     mean: npt.ArrayLike,
     covariance: npt.ArrayLike,
     *,
     num_samples: int,
-    rng: np.random.Generator | None = None,
-) -> Float[np.ndarray, "sample coordinate"]:
-    """Draw loading vectors from a fitted Gaussian."""
-    generator = rng if rng is not None else np.random.default_rng()
-    return generator.multivariate_normal(
+    rng: np.random.Generator,
+) -> np.ndarray:
+    return rng.multivariate_normal(
         np.asarray(mean),
         np.asarray(covariance),
         size=num_samples,
+    )
+
+
+def sample_loading_vectors(
+    names: Sequence[str],
+    mean: npt.ArrayLike,
+    covariance: npt.ArrayLike,
+    *,
+    num_samples: int,
+    rng: np.random.Generator,
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Sample named loading vectors and return their fitted covariance."""
+    samples = _sample_loading_gaussian(
+        mean,
+        covariance,
+        num_samples=num_samples,
+        rng=rng,
+    )
+    vectors = {
+        name: samples[:, index]
+        for index, name in enumerate(names)
+    }
+    _, sample_covariance = fit_loading_gaussian(vectors)
+    return vectors, sample_covariance
+
+
+def _loading_names(rank: int) -> tuple[str, ...]:
+    suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
+    return (
+        "I",
+        *(f"n{suffix}" for suffix in suffixes),
+        *(f"m{suffix}" for suffix in suffixes),
+        "w",
     )
 
 
@@ -144,39 +160,27 @@ def sample_low_rank_rnns(
     *,
     num_networks: int,
     num_neurons: int,
-    rng: np.random.Generator | None = None,
+    rng: np.random.Generator,
 ) -> list[LowRankRNN]:
-    """Create RNNs from samples of a fitted loading Gaussian.
-
-    ``names`` is the loading order :func:`connectivity_vectors` produces, which
-    also fixes the rank: ``("I", "n", "m", "w")`` for rank one, and
-    ``("I", "n_1", "n_2", "m_1", "m_2", "w")`` for rank two.
-    """
+    """Create RNNs from samples of a fitted loading Gaussian."""
     names = tuple(names)
     rank = max((len(names) - 2) // 2, 1)
-    suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
-    expected_names = (
-        "I",
-        *(f"n{suffix}" for suffix in suffixes),
-        *(f"m{suffix}" for suffix in suffixes),
-        "w",
-    )
+    expected_names = _loading_names(rank)
     if names != expected_names:
         raise ValueError(f"names must be exactly {expected_names}")
 
-    generator = rng if rng is not None else np.random.default_rng()
+    suffixes = [""] if rank == 1 else [f"_{index + 1}" for index in range(rank)]
     networks = []
     for _ in range(num_networks):
-        network_loadings = sample_loading_gaussian(
+        samples = _sample_loading_gaussian(
             mean,
             covariance,
             num_samples=num_neurons,
-            rng=generator,
+            rng=rng,
         )
-        columns = dict(zip(names, network_loadings.T, strict=True))
+        columns = dict(zip(names, samples.T, strict=True))
         network = LowRankRNN(n_units=num_neurons, rank=rank)
         with torch.no_grad():
-            # I and w are single vectors; n and m take one column per rank index.
             for name, loadings in (
                 ("I", [columns["I"]]),
                 ("n", [columns[f"n{suffix}"] for suffix in suffixes]),
@@ -186,99 +190,203 @@ def sample_low_rank_rnns(
                 target = getattr(network, name)
                 target.copy_(
                     torch.as_tensor(
-                        np.column_stack(loadings), dtype=target.dtype
+                        np.column_stack(loadings),
+                        dtype=target.dtype,
                     ).reshape_as(target)
                 )
         networks.append(network)
     return networks
 
 
-@torch.no_grad()
-@typechecked
-def delay_eigenvalues(
-    model: LowRankRNN,
-    coordinates: Float[torch.Tensor, "state rank"],
-) -> Complex[np.ndarray, "state rank"]:
-    """Linearize the autonomous latent flow at each memory state.
+def named_covariances(
+    names: Sequence[str],
+    covariance: npt.ArrayLike,
+    pairs: Sequence[tuple[str, str]],
+) -> dict[str, float]:
+    """Select covariance entries by loading name."""
+    index = {name: position for position, name in enumerate(names)}
+    covariance = np.asarray(covariance)
+    return {
+        f"Cov({first}, {second})": float(
+            covariance[index[first], index[second]]
+        )
+        for first, second in pairs
+    }
 
-    Eigenvalues are in units of ``1 / tau`` and sorted by decreasing real part,
-    so the leading mode comes first: a line attractor holds it near zero, while
-    a nonzero imaginary part means the memory rotates.
-    """
+
+@typechecked
+def connectivity_overlap(
+    m: npt.ArrayLike,
+    n: npt.ArrayLike,
+) -> Float[np.ndarray, "rank rank"]:
+    """Return the recurrent loop gain ``n.T @ m / N``."""
+    m, n = np.asarray(m, dtype=float), np.asarray(n, dtype=float)
+    return n.T @ m / len(m)
+
+
+@typechecked
+def _svd_connectivity_basis(
+    model: LowRankRNN,
+) -> tuple[Float[np.ndarray, "unit rank"], Float[np.ndarray, "unit rank"]]:
+    """Return equivalent connectivity factors in the canonical SVD basis."""
+    m = model.m.detach().cpu().numpy().astype(float)
+    n = model.n.detach().cpu().numpy().astype(float)
+    m_basis, m_factor = np.linalg.qr(m)
+    n_basis, n_factor = np.linalg.qr(n)
+    left, values, right = np.linalg.svd(m_factor @ n_factor.T)
+    scale = np.sqrt(values)
+    return m_basis @ left * scale, n_basis @ right.T * scale
+
+
+def svd_canonical_model(model: LowRankRNN) -> tuple[LowRankRNN, float]:
+    """Copy a model into its SVD connectivity basis."""
+    canonical_m, canonical_n = _svd_connectivity_basis(model)
+    canonical = deepcopy(model)
+    with torch.no_grad():
+        canonical.m.copy_(torch.as_tensor(canonical_m, dtype=canonical.m.dtype))
+        canonical.n.copy_(torch.as_tensor(canonical_n, dtype=canonical.n.dtype))
+    canonical.eval()
+
+    original = (
+        model.m.detach().cpu().numpy()
+        @ model.n.detach().cpu().numpy().T
+    )
+    reconstructed = canonical_m @ canonical_n.T
+    error = float(
+        np.linalg.norm(reconstructed - original) / np.linalg.norm(original)
+    )
+    return canonical, error
+
+
+def real_overlap_modes(
+    model: LowRankRNN,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return unit-RMS real modes ordered from slowest to fastest."""
+    raw_m = model.m.detach().cpu().numpy().astype(float)
+    raw_n = model.n.detach().cpu().numpy().astype(float)
+    values, vectors = np.linalg.eig(connectivity_overlap(raw_m, raw_n))
+    order = np.argsort(-values.real)
+    values = values[order]
+    if np.max(np.abs(values.imag)) >= 1e-6:
+        raise ValueError("recurrent overlap does not have real modes")
+
+    transform = vectors[:, order].real
+    mode_m = raw_m @ transform
+    mode_n = raw_n @ np.linalg.inv(transform).T
+
+    scales = np.linalg.norm(mode_m, axis=0) / np.sqrt(model.n_units)
+    mode_m = mode_m / scales
+    mode_n = mode_n * scales
+    signs = np.sign(mode_n.T @ model.I.detach().cpu().numpy())
+    signs[signs == 0] = 1
+    return mode_m * signs, mode_n * signs, values.real
+
+
+def _project_states(
+    states: npt.ArrayLike,
+    basis: npt.ArrayLike,
+) -> np.ndarray:
+    """Recover state coordinates in a supplied, possibly nonorthogonal basis."""
+    return np.asarray(states) @ np.linalg.pinv(np.asarray(basis)).T
+
+
+def simulate_and_project(
+    model: LowRankRNN,
+    inputs: npt.ArrayLike,
+    basis: npt.ArrayLike,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run a model and project its states into a supplied basis."""
+    outputs, states = run_model(model, inputs)
+    return outputs, states, _project_states(states, basis)
+
+
+@torch.no_grad()
+def latent_jacobian_eigenvalues(
+    model: LowRankRNN,
+    states: npt.ArrayLike | torch.Tensor,
+    *,
+    m: npt.ArrayLike | torch.Tensor | None = None,
+    n: npt.ArrayLike | torch.Tensor | None = None,
+) -> np.ndarray:
+    """Linearize the recurrent latent flow at each supplied network state."""
+    state_tensor = torch.as_tensor(states, dtype=model.m.dtype)
+    mode_m = model.m.detach() if m is None else torch.as_tensor(m, dtype=model.m.dtype)
+    mode_n = model.n.detach() if n is None else torch.as_tensor(n, dtype=model.n.dtype)
+    identity = torch.eye(mode_m.shape[1], dtype=mode_m.dtype)
     eigenvalues = []
-    identity = torch.eye(model.m.shape[1])
-    for coordinate in coordinates:
-        gain = 1 - torch.tanh(model.m @ coordinate).square()
-        jacobian = model.n.T @ (gain[:, None] * model.m) / model.n_units - identity
+    for state in state_tensor:
+        gain = 1 - torch.tanh(state).square()
+        jacobian = mode_n.T @ (gain[:, None] * mode_m) / model.n_units - identity
         values = torch.linalg.eigvals(jacobian)
         eigenvalues.append(values[torch.argsort(-values.real)])
     return torch.stack(eigenvalues).cpu().numpy()
 
 
-@torch.no_grad()
-@typechecked
-def delay_diagnostics(
+def variable_delay_mses(
     model: LowRankRNN,
+    frequency_pairs: npt.ArrayLike,
+    delays: npt.ArrayLike,
+) -> np.ndarray:
+    """Evaluate masked decision MSE at each fixed probe delay."""
+    frequency_pairs = np.asarray(frequency_pairs)
+    scores = []
+    with torch.no_grad():
+        for delay in np.asarray(delays, dtype=int):
+            inputs, targets, decision_mask = make_variable_delay_trials(
+                frequency_pairs,
+                np.full(len(frequency_pairs), delay),
+            )
+            outputs, _ = model(inputs)
+            scores.append(
+                masked_decision_loss(outputs, targets, decision_mask).item()
+            )
+    return np.asarray(scores)
+
+
+def find_fixed_points_1d(
+    flow: Callable[[npt.ArrayLike], npt.ArrayLike],
     *,
-    probe_delays: npt.ArrayLike = DELAYS[::5],
-) -> dict[str, np.ndarray]:
-    """Summarize how a trained network holds its memory across the delay.
-
-    Sweeps ``f_1`` with a neutral ``f_2`` to read the memory states off the
-    delay period, then reports their trajectory, the task error over a grid of
-    frequency pairs at each probe delay, how far the states drift relative to
-    the span of the memory manifold, and the local spectrum.
-    """
-    probe_delays = np.asarray(probe_delays)
-    neutral_frequency = (MIN_FREQUENCY + MAX_FREQUENCY) / 2
-    sweep_frequencies = np.column_stack(
-        (FREQUENCIES, np.full_like(FREQUENCIES, neutral_frequency))
-    )
-    sweep_inputs, _, _ = make_trials(
-        sweep_frequencies,
-        np.full(len(FREQUENCIES), DELAYS.max()),
+    bounds: tuple[float, float],
+    grid_size: int = 2_401,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Find and classify the roots of a one-dimensional flow."""
+    grid = np.linspace(*bounds, grid_size)
+    flow_values = np.asarray(flow(grid))
+    energy = 0.5 * flow_values**2
+    minima = (
+        np.flatnonzero(
+            (energy[1:-1] <= energy[:-2])
+            & (energy[1:-1] <= energy[2:])
+        )
+        + 1
     )
 
-    _, states = model(sweep_inputs)
-    coordinates = states @ torch.linalg.pinv(model.m).T
-    delay_start = FIXATION_STEPS + STIMULUS_STEPS
-    memory_coordinates = coordinates[:, delay_start : delay_start + DELAYS.max() + 1]
+    fixed_points = []
+    for index in minima:
+        result = minimize_scalar(
+            lambda value: 0.5 * float(np.asarray(flow([value]))[0]) ** 2,
+            bounds=(grid[index - 1], grid[index + 1]),
+            method="bounded",
+        )
+        if result.fun < 1e-10 and not any(
+            abs(result.x - existing) < 1e-3
+            for existing in fixed_points
+        ):
+            fixed_points.append(float(result.x))
 
-    pairs = frequency_pair_grid()
-    probe_mse = []
-    for delay in probe_delays:
-        inputs, targets, decision_mask = make_trials(pairs, np.full(len(pairs), delay))
-        outputs, _ = model(inputs)
-        probe_mse.append(masked_decision_loss(outputs, targets, decision_mask).item())
-
-    reference = DELAYS.min()
-    manifold_span = torch.linalg.vector_norm(
-        memory_coordinates[-1, reference] - memory_coordinates[0, reference]
+    fixed_points = np.asarray(sorted(fixed_points))
+    step = 1e-4
+    slopes = np.asarray(
+        [
+            (
+                np.asarray(flow([point + step]))[0]
+                - np.asarray(flow([point - step]))[0]
+            )
+            / (2 * step)
+            for point in fixed_points
+        ]
     )
-    drift = torch.linalg.vector_norm(
-        memory_coordinates[:, probe_delays] - memory_coordinates[:, reference, None],
-        dim=-1,
-    ).mean(dim=0) / manifold_span
-
-    # How much of the initial f_1 separation survives, in units of its value at
-    # delay onset. Latent coordinates carry no absolute scale, so this is the
-    # comparable measure of whether a network still holds the stimulus.
-    probed = memory_coordinates[:, probe_delays]
-    onset_span = torch.linalg.vector_norm(
-        memory_coordinates[-1, 0] - memory_coordinates[0, 0]
-    )
-    retained_span = (
-        torch.linalg.vector_norm(probed[-1] - probed[0], dim=-1) / onset_span
-    )
-
-    return {
-        "memory_coordinates": memory_coordinates.cpu().numpy(),
-        "probe_mse": np.asarray(probe_mse),
-        "fractional_drift": drift.cpu().numpy(),
-        "retained_span": retained_span.cpu().numpy(),
-        "eigenvalues": delay_eigenvalues(model, memory_coordinates[:, DELAYS.max()]),
-        "overlap": (model.n.T @ model.m / model.n_units).cpu().numpy(),
-    }
+    return grid, flow_values, fixed_points, slopes
 
 
 @typechecked
@@ -290,19 +398,9 @@ def project_rank_one_activity(
     if model.m.shape[1] != 1:
         raise ValueError("model must have rank 1")
 
-    m_vector = model.m[:, 0].detach()
-    input_vector = model.I.detach()
-
-    m_norm = torch.linalg.vector_norm(m_vector)
-    if torch.isclose(m_norm, torch.zeros_like(m_norm)):
-        raise ValueError("m must be nonzero")
-    m_axis = m_vector / m_norm
-
-    orthogonal_input = input_vector - torch.dot(input_vector, m_axis) * m_axis
-    input_norm = torch.linalg.vector_norm(orthogonal_input)
-    if torch.isclose(input_norm, torch.zeros_like(input_norm)):
-        raise ValueError("I and m must span a plane")
-
-    input_axis = orthogonal_input / input_norm
+    m_axis = model.m[:, 0].detach()
+    m_axis = m_axis / torch.linalg.vector_norm(m_axis)
+    input_axis = model.I.detach() - torch.dot(model.I, m_axis) * m_axis
+    input_axis = input_axis / torch.linalg.vector_norm(input_axis)
     basis = torch.stack((m_axis, input_axis), dim=1)
     return (states.detach() @ basis).cpu().numpy()

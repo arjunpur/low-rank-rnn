@@ -10,7 +10,11 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.data.variable_delay import DELAYS, FREQUENCIES, sample_trials
+from low_rank_rnn.data.working_memory import (
+    DELAYS,
+    FREQUENCIES,
+    sample_variable_delay_trials,
+)
 
 
 def _decision_window(
@@ -121,7 +125,7 @@ def train_variable_delay(
 
     model.train()
     for stage_delays in stages:
-        inputs, targets, decision_mask = sample_trials(
+        inputs, targets, decision_mask = sample_variable_delay_trials(
             num_trials,
             stage_delays,
             rng=rng,

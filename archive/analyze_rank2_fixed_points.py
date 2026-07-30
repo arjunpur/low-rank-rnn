@@ -14,10 +14,11 @@ from scipy.optimize import root
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from low_rank_rnn.analysis import connectivity_overlap, svd_connectivity_basis
-from low_rank_rnn.data.variable_delay import FREQUENCIES, stimulus_amplitudes
+from low_rank_rnn.analysis import connectivity_overlap, svd_canonical_model
+from low_rank_rnn.data.working_memory import FREQUENCIES, stimulus_amplitudes
 from low_rank_rnn.model import LowRankRNN
-from low_rank_rnn.plotting import COLORS, set_plot_style
+from low_rank_rnn.plotting import set_plot_style
+from low_rank_rnn.plotting.style import COLORS
 from low_rank_rnn.training import train_model
 
 
@@ -101,7 +102,9 @@ def unit_rms_modes(
         mode_m = raw_m @ transform
         mode_n = raw_n @ np.linalg.inv(transform).T
     else:
-        mode_m, mode_n = svd_connectivity_basis(model)
+        canonical, _ = svd_canonical_model(model)
+        mode_m = canonical.m.detach().numpy().astype(float)
+        mode_n = canonical.n.detach().numpy().astype(float)
 
     scales = np.linalg.norm(mode_m, axis=0) / np.sqrt(model.n_units)
     mode_m = mode_m / scales

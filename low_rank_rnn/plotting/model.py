@@ -1,26 +1,24 @@
-"""Plots for low-rank RNN outputs and dynamics."""
-
-from __future__ import annotations
+"""Plots for model analysis and low-dimensional dynamics."""
 
 from collections.abc import Mapping, Sequence
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import Ellipse
 from matplotlib.ticker import MaxNLocator, PercentFormatter
 import numpy as np
 import numpy.typing as npt
 
-from low_rank_rnn.constants import STIMULUS_WINDOW
 from low_rank_rnn.plotting.style import (
-    CHOICE_COLORS,
     COLORS,
     COVARIANCE_CMAP,
     COVARIANCE_COLORS,
-    MEAN_CHOICE_COLORS,
+    REFERENCE_LINE_STYLE,
+    SIGNED_VALUE_CMAP,
 )
 
 
-def plot_performance_comparison(
+def _plot_performance_comparison(
     trained_value: float,
     sampled_values: npt.ArrayLike,
     *,
@@ -29,23 +27,18 @@ def plot_performance_comparison(
     baseline: float | None = None,
     baseline_label: str | None = None,
     value_format: str = "{:.1%}",
-    legend_loc: str = "lower left",
     axis: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Compare one trained network with Gaussian-sampled networks.
-
-    ``baseline`` draws the reference a network that has learned nothing would
-    reach - chance for a classification, the error of a constant output for a
-    regression. Pass ``axis`` to draw into an existing subplot.
-    """
     sampled_values = np.asarray(sampled_values, dtype=float)
     sample_positions = np.linspace(0.86, 1.14, len(sampled_values))
     sampled_mean = float(sampled_values.mean())
-
     owns_figure = axis is None
     fig, axis = (
-        plt.subplots(figsize=(6.4, 4.2)) if owns_figure else (axis.figure, axis)
+        plt.subplots(figsize=(6.4, 4.2))
+        if owns_figure
+        else (axis.figure, axis)
     )
+
     axis.scatter(
         0,
         trained_value,
@@ -83,15 +76,14 @@ def plot_performance_comparison(
             baseline,
             color=COLORS["gray"],
             linestyle=":",
-            linewidth=1.0,
+            linewidth=1,
             label=baseline_label,
         )
 
     axis.set_xticks((0, 1), labels=("Trained network", "Gaussian samples"))
     axis.set_xlim(-0.35, 1.35)
-    axis.set_ylabel(ylabel)
-    axis.set_title(title)
-    axis.legend(loc=legend_loc)
+    axis.set(ylabel=ylabel, title=title)
+    axis.legend(loc="lower left")
     if owns_figure:
         fig.tight_layout()
     return fig, axis
@@ -102,23 +94,18 @@ def plot_accuracy_comparison(
     sampled_accuracies: npt.ArrayLike,
     *,
     title: str = "Held-out perceptual decision performance",
-    axis: plt.Axes | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Compare decision accuracy of a trained and Gaussian-sampled networks."""
-    owns_figure = axis is None
-    fig, axis = plot_performance_comparison(
+    """Compare a trained network with Gaussian-sampled networks."""
+    fig, axis = _plot_performance_comparison(
         trained_accuracy,
         sampled_accuracies,
         ylabel="Decision accuracy",
         title=title,
         baseline=0.5,
         baseline_label="chance: 50%",
-        axis=axis,
     )
     axis.set_ylim(0, 1.03)
     axis.yaxis.set_major_formatter(PercentFormatter(1.0))
-    if owns_figure:
-        fig.tight_layout()
     return fig, axis
 
 
@@ -138,76 +125,24 @@ def plot_reduced_system_accuracy(
         0.5,
         color=COLORS["gray"],
         linestyle=":",
-        linewidth=1.0,
+        linewidth=1,
         label="chance: 50%",
     )
     axis.set_ylim(0, 1.03)
     axis.yaxis.set_major_formatter(PercentFormatter(1.0))
-    axis.set_ylabel("Decision accuracy")
-    axis.set_title("Held-out perceptual decision performance")
+    axis.set(
+        ylabel="Decision accuracy",
+        title="Held-out perceptual decision performance",
+    )
     axis.legend(loc="lower left")
     fig.tight_layout()
     return fig, axis
-
-
-def plot_trial_outputs(
-    inputs: npt.ArrayLike,
-    labels: npt.ArrayLike,
-    outputs: npt.ArrayLike,
-    *,
-    stimulus_window: Sequence[int] = STIMULUS_WINDOW,
-    decision_steps: int = 15,
-) -> tuple[plt.Figure, np.ndarray]:
-    """Plot task inputs and model outputs for each supplied trial."""
-    inputs = np.asarray(inputs)
-    labels = np.asarray(labels)
-    outputs = np.asarray(outputs)
-    n_trials, n_steps = inputs.shape
-    time_steps = np.arange(n_steps)
-    stimulus_start, stimulus_end = stimulus_window
-    decision_start = n_steps - decision_steps
-
-    fig, axes = plt.subplots(
-        n_trials,
-        2,
-        figsize=(12, 1.8 * n_trials),
-        sharex="col",
-        squeeze=False,
-    )
-    for trial, (input_axis, output_axis) in enumerate(axes):
-        choice_color = CHOICE_COLORS[int(np.sign(labels[trial]))]
-        input_axis.plot(time_steps, inputs[trial], color=choice_color, lw=0.8)
-        input_axis.axvspan(stimulus_start, stimulus_end, color="gray", alpha=0.12)
-        direction = "right (+1)" if labels[trial] > 0 else "left (-1)"
-        input_axis.set_ylabel(f"trial {trial}\n{direction}")
-
-        output_axis.plot(time_steps, outputs[trial], color=choice_color, lw=0.8)
-        output_axis.axhline(
-            labels[trial],
-            color=choice_color,
-            ls="--",
-            lw=0.8,
-            alpha=0.7,
-        )
-        output_axis.axvspan(stimulus_start, stimulus_end, color="gray", alpha=0.12)
-        output_axis.axvspan(decision_start, n_steps - 1, color="C2", alpha=0.15)
-        output_axis.set_ylim(-1.5, 1.5)
-
-    axes[0, 0].set_title("input")
-    axes[0, 1].set_title("output")
-    axes[-1, 0].set_xlabel("time step")
-    axes[-1, 1].set_xlabel("time step")
-    fig.suptitle("Input and model output")
-    fig.tight_layout()
-    return fig, axes
 
 
 def _add_covariance_ellipse(
     axis: plt.Axes,
     x: np.ndarray,
     y: np.ndarray,
-    *,
-    n_std: float = 2.0,
 ) -> float:
     covariance = np.cov(x, y)
     eigenvalues, eigenvectors = np.linalg.eigh(covariance)
@@ -215,8 +150,8 @@ def _add_covariance_ellipse(
     eigenvalues = np.clip(eigenvalues[order], 0, None)
     eigenvectors = eigenvectors[:, order]
     angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-    width, height = 2 * n_std * np.sqrt(eigenvalues)
-    covariance_color = COVARIANCE_COLORS[
+    width, height = 4 * np.sqrt(eigenvalues)
+    color = COVARIANCE_COLORS[
         "positive" if covariance[0, 1] >= 0 else "negative"
     ]
     axis.add_patch(
@@ -225,13 +160,13 @@ def _add_covariance_ellipse(
             width,
             height,
             angle=angle,
-            facecolor=covariance_color,
-            edgecolor=covariance_color,
+            facecolor=color,
+            edgecolor=color,
             alpha=0.15,
             linewidth=2,
         )
     )
-    return covariance[0, 1]
+    return float(covariance[0, 1])
 
 
 def plot_connectivity_pairs(
@@ -243,16 +178,12 @@ def plot_connectivity_pairs(
     """Plot the requested unique pairs of connectivity vectors."""
     row_names = tuple(row_names)
     column_names = tuple(column_names)
-    if not row_names or not column_names:
-        raise ValueError("row_names and column_names must not be empty")
-
     fig, axes = plt.subplots(
         len(row_names),
         len(column_names),
         figsize=(3 * len(column_names), 3 * len(row_names)),
         squeeze=False,
     )
-
     for axis in axes.flat:
         axis.set_visible(False)
 
@@ -277,7 +208,6 @@ def plot_connectivity_pairs(
                 edgecolors="none",
             )
             covariance = _add_covariance_ellipse(axis, x, y)
-
             axis.set_xlim(-1.05 * np.max(np.abs(x)), 1.05 * np.max(np.abs(x)))
             axis.set_ylim(-1.05 * np.max(np.abs(y)), 1.05 * np.max(np.abs(y)))
             axis.spines["left"].set_position(("data", 0))
@@ -299,6 +229,8 @@ def plot_connectivity_pairs(
 def plot_connectivity_covariance(
     names: Sequence[str],
     covariance: npt.ArrayLike,
+    *,
+    title: str | None = None,
 ) -> tuple[plt.Figure, plt.Axes]:
     """Plot unique cross-covariances as a triangular heat map."""
     names = tuple(names)
@@ -307,18 +239,24 @@ def plot_connectivity_covariance(
     mask = np.tril(np.ones_like(pair_covariances, dtype=bool), k=-1)
     visible = pair_covariances[~mask]
     color_limit = max(float(np.max(np.abs(visible))), 1e-12)
-
-    # Grow the figure with the grid so the per-cell labels stay legible.
     n_pairs = len(names) - 1
-    fig, axis = plt.subplots(figsize=(1.35 * n_pairs + 1.4, 1.0 * n_pairs + 1.0))
+    fig, axis = plt.subplots(
+        figsize=(1.35 * n_pairs + 1.4, 1.0 * n_pairs + 1.0)
+    )
     image = axis.imshow(
         np.ma.masked_array(pair_covariances, mask=mask),
         cmap=COVARIANCE_CMAP,
         vmin=-color_limit,
         vmax=color_limit,
     )
-    axis.set_xticks(range(len(names) - 1), labels=[rf"${name}$" for name in names[1:]])
-    axis.set_yticks(range(len(names) - 1), labels=[rf"${name}$" for name in names[:-1]])
+    axis.set_xticks(
+        range(len(names) - 1),
+        labels=[rf"${name}$" for name in names[1:]],
+    )
+    axis.set_yticks(
+        range(len(names) - 1),
+        labels=[rf"${name}$" for name in names[:-1]],
+    )
     axis.xaxis.tick_top()
     axis.yaxis.tick_right()
     axis.tick_params(length=0, labelsize=12)
@@ -341,132 +279,75 @@ def plot_connectivity_covariance(
                 fontsize=12,
             )
 
-    colorbar = fig.colorbar(image, ax=axis, shrink=0.78, pad=0.12)
-    colorbar.set_label("Covariance", rotation=270, labelpad=18)
+    fig.colorbar(image, ax=axis, shrink=0.78, pad=0.12, label="Covariance")
+    if title is not None:
+        axis.set_title(title, pad=18)
     fig.tight_layout()
     return fig, axis
 
 
-def activity_trajectory_limits(
-    projected_states: npt.ArrayLike,
+def _trajectory_limits(
+    trajectories: npt.ArrayLike,
     *,
     padding: float = 0.05,
 ) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Return symmetric, independently scaled limits for trajectory axes."""
-    projected_states = np.asarray(projected_states)
-    if projected_states.shape[-1] != 2:
-        raise ValueError("projected_states must end with two trajectory coordinates")
-
-    coordinate_limits = np.max(
-        np.abs(projected_states),
-        axis=tuple(range(projected_states.ndim - 1)),
+    trajectories = np.asarray(trajectories)
+    limits = np.max(
+        np.abs(trajectories),
+        axis=tuple(range(trajectories.ndim - 1)),
     )
-    coordinate_limits = np.maximum(coordinate_limits * (1 + padding), 1e-6)
-    x_limit, y_limit = coordinate_limits
-    return (-float(x_limit), float(x_limit)), (-float(y_limit), float(y_limit))
+    limits = np.maximum(limits * (1 + padding), 1e-6)
+    return (-float(limits[0]), float(limits[0])), (
+        -float(limits[1]),
+        float(limits[1]),
+    )
 
 
-def _style_activity_trajectory_axis(
+def _style_trajectory_axis(
     axis: plt.Axes,
-    projected_states: npt.ArrayLike,
+    trajectories: npt.ArrayLike,
 ) -> None:
-    """Style a two-dimensional activity trajectory axis."""
-    x_limits, y_limits = activity_trajectory_limits(projected_states)
+    x_limits, y_limits = _trajectory_limits(trajectories)
     axis.set_xlim(*x_limits)
     axis.set_ylim(*y_limits)
     axis.spines["left"].set_position(("data", 0))
     axis.spines["bottom"].set_position(("data", 0))
-    axis.spines["top"].set_visible(False)
-    axis.spines["right"].set_visible(False)
     axis.xaxis.set_major_locator(MaxNLocator(nbins=4))
     axis.yaxis.set_major_locator(MaxNLocator(nbins=4))
     axis.tick_params(labelsize=8)
     axis.grid(False)
-    axis.set_xlabel(r"activity along $m$")
-    axis.xaxis.set_label_coords(1, -0.04)
-    axis.xaxis.label.set_horizontalalignment("right")
-    axis.set_ylabel(r"activity along $I_\perp$")
-    axis.yaxis.set_label_coords(-0.04, 1)
-    axis.yaxis.label.set_horizontalalignment("right")
-
-
-def plot_activity_trajectories(
-    projected_states: npt.ArrayLike,
-    labels: npt.ArrayLike,
-) -> tuple[plt.Figure, plt.Axes]:
-    """Plot individual and condition-averaged activity trajectories."""
-    projected_states = np.asarray(projected_states)
-    labels = np.asarray(labels)
-    fig, axis = plt.subplots(figsize=(8, 7))
-
-    for choice, color in CHOICE_COLORS.items():
-        trajectories = projected_states[labels == choice]
-        if len(trajectories) == 0:
-            continue
-
-        for trajectory in trajectories:
-            axis.plot(trajectory[:, 0], trajectory[:, 1], color=color, alpha=0.25)
-
-        mean_trajectory = trajectories.mean(axis=0)
-        mean_color = MEAN_CHOICE_COLORS[choice]
-        axis.plot(
-            mean_trajectory[:, 0],
-            mean_trajectory[:, 1],
-            color=mean_color,
-            linewidth=3,
-            label=f"mean choice {choice:+d}",
-        )
-        arrow_times = np.arange(0, len(mean_trajectory) - 1, 8)
-        steps = np.diff(mean_trajectory, axis=0)
-        axis.quiver(
-            mean_trajectory[arrow_times, 0],
-            mean_trajectory[arrow_times, 1],
-            steps[arrow_times, 0],
-            steps[arrow_times, 1],
-            color=mean_color,
-            angles="xy",
-            scale_units="xy",
-            scale=1,
-            width=0.004,
-        )
-        axis.scatter(*mean_trajectory[0], color=mean_color, marker="o", s=70)
-        axis.scatter(*mean_trajectory[-1], color=mean_color, marker="X", s=90)
-
-    _style_activity_trajectory_axis(axis, projected_states)
-    axis.set_title("Population activity trajectories in the $m$–$I$ plane")
-    axis.legend(title="circle: start, X: end")
-    axis.set_aspect("auto")
-    fig.tight_layout()
-    return fig, axis
 
 
 def plot_activity_trajectories_by_stimulus(
-    projected_states: npt.ArrayLike,
+    trajectories: npt.ArrayLike,
     mean_stimuli: npt.ArrayLike,
 ) -> tuple[plt.Figure, plt.Axes]:
-    """Plot activity trajectories colored by mean stimulus."""
-    projected_states = np.asarray(projected_states)
+    """Plot two-dimensional activity trajectories by mean stimulus."""
+    trajectories = np.asarray(trajectories)
     mean_stimuli = np.asarray(mean_stimuli)
     stimulus_limit = max(float(np.max(np.abs(mean_stimuli))), 1e-12)
-    stimulus_norm = plt.Normalize(-stimulus_limit, stimulus_limit)
-    stimulus_cmap = plt.get_cmap("coolwarm")
+    norm = plt.Normalize(-stimulus_limit, stimulus_limit)
 
     fig, axis = plt.subplots(figsize=(8, 7))
-    for trajectory, mean_stimulus in zip(projected_states, mean_stimuli):
+    for trajectory, mean_stimulus in zip(trajectories, mean_stimuli):
         axis.plot(
             trajectory[:, 0],
             trajectory[:, 1],
-            color=stimulus_cmap(stimulus_norm(mean_stimulus)),
+            color=SIGNED_VALUE_CMAP(norm(mean_stimulus)),
             alpha=0.4,
         )
 
-    _style_activity_trajectory_axis(axis, projected_states)
+    _style_trajectory_axis(axis, trajectories)
+    axis.set(
+        xlabel=r"activity along $m$",
+        ylabel=r"activity along $I_\perp$",
+        title="Activity trajectories colored by mean stimulus",
+    )
     colorbar = fig.colorbar(
-        plt.cm.ScalarMappable(norm=stimulus_norm, cmap=stimulus_cmap),
+        plt.cm.ScalarMappable(norm=norm, cmap=SIGNED_VALUE_CMAP),
         ax=axis,
     )
     colorbar.set_label(r"mean stimulus, $\bar{u}$")
-    axis.set_title("Activity trajectories colored by mean stimulus")
     fig.tight_layout()
     return fig, axis
 
@@ -480,7 +361,136 @@ def plot_reduced_system_trajectories(
         trajectories,
         mean_stimuli,
     )
-    axis.set_xlabel(r"latent state, $\kappa$")
-    axis.set_ylabel(r"filtered input, $v$")
-    axis.set_title("Equivalent one-dimensional system trajectories")
+    axis.set(
+        xlabel=r"latent state, $\kappa$",
+        ylabel=r"filtered input, $v$",
+        title="Equivalent one-dimensional system trajectories",
+    )
     return fig, axis
+
+
+def plot_loading_distributions(
+    trained_vectors: Mapping[str, npt.ArrayLike],
+    sampled_vectors: Mapping[str, npt.ArrayLike],
+) -> tuple[plt.Figure, np.ndarray]:
+    """Compare trained and Gaussian-sampled loading marginals."""
+    names = tuple(trained_vectors)
+    columns = min(3, len(names))
+    rows = int(np.ceil(len(names) / columns))
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(3.4 * columns, 2.8 * rows),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for axis, name in zip(axes.flat, names):
+        axis.hist(
+            trained_vectors[name],
+            bins=18,
+            density=True,
+            alpha=0.55,
+            color=COLORS["gray"],
+            label="trained",
+        )
+        axis.hist(
+            sampled_vectors[name],
+            bins=18,
+            density=True,
+            alpha=0.45,
+            color=COLORS["purple"],
+            label="Gaussian sample",
+        )
+        axis.set_title(name)
+    for axis in axes.flat[len(names) :]:
+        axis.set_visible(False)
+    axes.flat[0].legend()
+    fig.suptitle("Loading marginals: empirical and Gaussian sample")
+    return fig, axes
+
+
+def plot_explained_variance(
+    explained_variance: npt.ArrayLike,
+    *,
+    num_components: int = 6,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot PCA explained variance for the leading components."""
+    values = np.asarray(explained_variance)[:num_components]
+    colors = (COLORS["blue"], COLORS["red"], *([COLORS["gray"]] * (len(values) - 2)))
+    fig, axis = plt.subplots(figsize=(7, 3.8))
+    axis.bar(np.arange(1, len(values) + 1), 100 * values, color=colors)
+    axis.set(
+        xlabel="principal component",
+        ylabel="explained variance (%)",
+        title="PCA rediscovers the low-dimensional state space",
+    )
+    fig.tight_layout()
+    return fig, axis
+
+
+def plot_fixed_points(
+    grid: npt.ArrayLike,
+    flow: npt.ArrayLike,
+    fixed_points: npt.ArrayLike,
+    slopes: npt.ArrayLike,
+) -> tuple[plt.Figure, np.ndarray]:
+    """Plot a one-dimensional flow, energy, and classified fixed points."""
+    grid = np.asarray(grid)
+    flow = np.asarray(flow)
+    fixed_points = np.asarray(fixed_points)
+    slopes = np.asarray(slopes)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), constrained_layout=True)
+    axes[0].plot(grid, flow, color=COLORS["blue"])
+    axes[0].axhline(0, **REFERENCE_LINE_STYLE)
+    axes[0].set(xlabel=r"$\kappa$", ylabel=r"$f(\kappa)$", title="Zero-input flow")
+    axes[1].semilogy(grid, 0.5 * flow**2 + 1e-12, color=COLORS["purple"])
+    axes[1].set(
+        xlabel=r"$\kappa$",
+        ylabel=r"$q(\kappa)$",
+        title="Fixed-point energy",
+    )
+    for point, slope in zip(fixed_points, slopes):
+        stable = slope < 0
+        color = COLORS["green"] if stable else COLORS["red"]
+        marker = "o" if stable else "X"
+        axes[0].scatter(point, 0, color=color, marker=marker, s=70, zorder=3)
+        axes[1].scatter(point, 1e-12, color=color, marker=marker, s=70, zorder=3)
+    return fig, axes
+
+
+def plot_training_loss(
+    losses: npt.ArrayLike,
+    *,
+    title: str,
+    stage_ends: Sequence[int] = (),
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot training loss with optional curriculum boundaries."""
+    losses = np.asarray(losses)
+    fig, axis = plt.subplots(figsize=(6.5, 3.2), constrained_layout=True)
+    axis.semilogy(np.arange(1, len(losses) + 1), losses)
+    for stage_end in stage_ends:
+        axis.axvline(stage_end + 0.5, **REFERENCE_LINE_STYLE)
+    axis.set(xlabel="epoch", ylabel="decision MSE", title=title)
+    return fig, axis
+
+
+def plot_covariance_comparison(
+    names: Sequence[str],
+    first: npt.ArrayLike,
+    second: npt.ArrayLike,
+    *,
+    titles: tuple[str, str],
+) -> tuple[plt.Figure, np.ndarray]:
+    """Compare two loading covariance matrices on one color scale."""
+    first, second = np.asarray(first), np.asarray(second)
+    limit = max(float(np.max(np.abs(first))), float(np.max(np.abs(second))))
+    norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), constrained_layout=True)
+    for axis, covariance, title in zip(axes, (first, second), titles):
+        image = axis.imshow(covariance, cmap=COVARIANCE_CMAP, norm=norm)
+        axis.set_xticks(range(len(names)), labels=names, rotation=35, ha="right")
+        axis.set_yticks(range(len(names)), labels=names)
+        axis.set_title(title)
+    fig.colorbar(image, ax=axes, label="covariance", shrink=0.78)
+    fig.suptitle("Loading covariance")
+    return fig, axes

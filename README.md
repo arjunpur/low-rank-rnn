@@ -1,64 +1,73 @@
-# Low Rank RNN
+# Low-rank RNN
 
-This repository contains a rank-one recurrent neural network for a perceptual
-decision-making task and a short note explaining its dynamics.
+This repository studies rank-one and rank-two recurrent neural networks on
+perceptual decision-making and parametric working-memory tasks.
 
-## Contents
+`final.ipynb` is the complete, reproducible analysis. Older exploratory
+notebooks and scripts live in `archive/`; they are not part of the core library
+contract.
 
-- `output/pdf/low_rank_connectivity_dynamics_explanation.tex` - LaTeX source
-- `output/pdf/low_rank_connectivity_dynamics_explanation.pdf` - rendered PDF
-- `low_rank_rnn/data/` - perceptual decision making data generation
-- `low_rank_rnn/model.py` - rank-one RNN dynamics
-- `low_rank_rnn/training.py` - decision loss, training, and evaluation
-- `low_rank_rnn/analysis.py` - connectivity and activity analysis
-- `low_rank_rnn/plotting/` - reusable figures and plotting style
-- `model.ipynb` - complete experiment using the package
+## Library layout
+
+- `low_rank_rnn/model.py` — low-rank dynamics and structured initialization
+- `low_rank_rnn/training.py` — losses, training loops, and task accuracy
+- `low_rank_rnn/data/` — task definitions and trial generation
+- `low_rank_rnn/analysis.py` — model evaluation, connectivity, projections, and
+  fixed-point analysis
+- `low_rank_rnn/mean_field.py` — Gaussian equivalent circuits
+- `low_rank_rnn/plotting/` — all figure construction and shared visual style
+
+The modules have deliberately narrow jobs. The notebook sets experiment
+parameters and interprets results; reusable computation and presentation live
+in the library.
 
 ## Usage
 
 ```python
-import matplotlib.pyplot as plt
+import numpy as np
+import torch
 
-from low_rank_rnn.data import generate_perceptual_decision_making_trials
-from low_rank_rnn.plotting import (
-    plot_first_perceptual_decision_making_trials,
-    set_plot_style,
+from low_rank_rnn import analysis, plotting
+from low_rank_rnn.data import perceptual_decision_making as task
+from low_rank_rnn.model import LowRankRNN
+from low_rank_rnn.training import train_model
+
+plotting.set_plot_style()
+inputs, labels = task.generate_trials(
+    200,
+    rng=np.random.default_rng(2026),
 )
 
-set_plot_style()
-
-data, labels = generate_perceptual_decision_making_trials(num_trials=10)
-fig, axes = plot_first_perceptual_decision_making_trials(data, labels, num_trials=5)
-plt.show()
+torch.manual_seed(2026)
+model = LowRankRNN(n_units=128, rank=1)
+losses = train_model(
+    model,
+    torch.as_tensor(inputs, dtype=torch.float32),
+    torch.as_tensor(labels, dtype=torch.float32),
+)
+outputs, states = analysis.run_model(model, inputs)
 ```
 
-Call `set_plot_style()` once near the top of a notebook. For a temporary style,
-use `with plot_style():`; named project colors are available through `COLORS`.
+Run the tests with:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
+
+Execute the final notebook from top to bottom with:
+
+```bash
+uv run jupyter nbconvert --execute --to notebook --inplace final.ipynb
+```
 
 ## Shape-aware development
 
-Install the compatible Trickle CLI and project environment once:
+Public numerical boundaries use `jaxtyping` with `beartype`. The optional
+Trickle setup records runtime values and tensor shapes:
 
 ```bash
 npm install -g trickle-cli@0.1.223
 uv sync
-```
-
-Then use the **Trickle: Run current Python file** task in Cursor. Trickle records
-runtime values in `.trickle/`, and its Cursor extension shows tensor shapes and
-types inline. The equivalent terminal command is:
-
-```bash
 source .venv/bin/activate
 trickle run python path/to/script.py
 ```
-
-For notebooks, run this in the first cell:
-
-```python
-%load_ext trickle
-```
-
-Public numerical functions use `jaxtyping` with `beartype` to check tensor and
-array shapes at module boundaries. Keep those modules free of
-`from __future__ import annotations`, which prevents runtime shape checking.

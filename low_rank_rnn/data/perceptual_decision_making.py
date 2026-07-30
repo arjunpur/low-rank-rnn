@@ -1,4 +1,4 @@
-"""Generate trials for a perceptual decision making task."""
+"""Perceptual decision-making task data."""
 
 from collections.abc import Sequence
 
@@ -7,19 +7,22 @@ import numpy.typing as npt
 from jaxtyping import Float, Integer
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.constants import (
-    NOISE_MEAN,
-    NOISE_STD,
-    STIMULUS_STRENGTHS,
-    STIMULUS_WINDOW,
-    TRIAL_LENGTH,
+TRIAL_STEPS = 75
+STIMULUS_WINDOW = (5, 45)
+STIMULUS_STRENGTHS = np.concatenate(
+    (
+        2 ** np.arange(5) * (3.2 / 100),
+        -(2 ** np.arange(5) * (3.2 / 100)),
+    )
 )
+NOISE_MEAN = 0.0
+NOISE_STD = 0.03
 
 
 @typechecked
-def generate_perceptual_decision_making_trials(
+def generate_trials(
     num_trials: int,
-    trial_length: int = TRIAL_LENGTH,
+    trial_steps: int = TRIAL_STEPS,
     *,
     stimulus_strengths: npt.ArrayLike = STIMULUS_STRENGTHS,
     stimulus_window: Sequence[int] = STIMULUS_WINDOW,
@@ -41,9 +44,39 @@ def generate_perceptual_decision_making_trials(
     generator = rng if rng is not None else np.random.default_rng()
     strengths = np.asarray(stimulus_strengths, dtype=float)
 
-    data = generator.normal(noise_mean, noise_std, (num_trials, trial_length))
+    data = generator.normal(noise_mean, noise_std, (num_trials, trial_steps))
     trial_strengths = generator.choice(strengths, size=num_trials)
     data[:, window_start : window_end + 1] += trial_strengths[:, np.newaxis]
 
     labels = np.sign(trial_strengths).astype(int)
     return data, labels
+
+
+@typechecked
+def mean_stimulus(
+    inputs: npt.ArrayLike,
+    stimulus_window: Sequence[int] = STIMULUS_WINDOW,
+) -> Float[np.ndarray, "trial"]:
+    """Average each trial's input over the inclusive stimulus window."""
+    start, end = stimulus_window
+    return np.asarray(inputs)[:, start : end + 1].mean(axis=1)
+
+
+@typechecked
+def representative_trial_indices(
+    inputs: npt.ArrayLike,
+    labels: npt.ArrayLike,
+) -> np.ndarray:
+    """Select weak and strong examples for both choices."""
+    means = mean_stimulus(inputs)
+    labels = np.asarray(labels)
+    selected = []
+    for choice in (-1, 1):
+        indices = np.flatnonzero(labels == choice)
+        selected.extend(
+            (
+                indices[np.argmin(means[indices])],
+                indices[np.argmax(means[indices])],
+            )
+        )
+    return np.asarray(selected)
