@@ -42,15 +42,17 @@ class LowRankRNNTests(unittest.TestCase):
         with self.assertRaises(TypeCheckError):
             LowRankRNN(4)(torch.zeros(2, 3, 1))
 
-    def test_persistent_transient_initialization_has_expected_loop_gains(self) -> None:
-        model = persistent_transient_rnn(64, seed=4)
+    def test_persistent_transient_initialization_samples_loop_gains(
+        self,
+    ) -> None:
+        model = persistent_transient_rnn(16_384, seed=4)
 
         overlap = analysis.connectivity_overlap(
             model.m.detach().numpy(),
             model.n.detach().numpy(),
         )
 
-        np.testing.assert_allclose(overlap, np.diag((1.0, 0.5)), atol=1e-5)
+        np.testing.assert_allclose(overlap, np.diag((1.0, 0.5)), atol=0.02)
 
 
 class WorkingMemoryDataTests(unittest.TestCase):

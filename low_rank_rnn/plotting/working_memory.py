@@ -15,7 +15,6 @@ from low_rank_rnn.plotting.style import (
     FREQUENCY_CMAP,
     REFERENCE_LINE_STYLE,
     RESIDUAL_CMAP,
-    SIGNED_VALUE_CMAP,
     STIMULUS_WINDOW_STYLE,
 )
 
@@ -36,48 +35,85 @@ def plot_memory_trials(
     frequency_pairs: Real[np.ndarray, "trial 2"],
     inputs: Real[np.ndarray, "trial time"],
     targets: Real[np.ndarray, "trial"],
-    target_matrix: Real[np.ndarray, "frequency frequency"],
-    frequencies: Real[np.ndarray, "frequency"],
+    outputs: Real[np.ndarray, "trial time"],
     *,
     first_window: tuple[int, int],
     second_window: tuple[int, int],
     decision_steps: int,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Plot representative two-pulse inputs and the full target grid."""
+    """Plot representative working-memory inputs and model outputs."""
     frequency_pairs = np.asarray(frequency_pairs)
     inputs = np.asarray(inputs)
     targets = np.asarray(targets)
-    offsets = 1.35 * np.arange(len(inputs))[::-1]
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), constrained_layout=True)
-    for pair, target, trial, offset in zip(
+    outputs = np.asarray(outputs)
+    num_trials, num_steps = inputs.shape
+    decision_start = num_steps - decision_steps
+    time_steps = np.arange(num_steps)
+
+    fig, axes = plt.subplots(
+        num_trials,
+        2,
+        figsize=(12, 1.8 * num_trials),
+        sharex=True,
+        squeeze=False,
+    )
+    for pair, target, trial_input, trial_output, row_axes in zip(
         frequency_pairs,
         targets,
         inputs,
-        offsets,
+        outputs,
+        axes,
     ):
-        axes[0].plot(
-            trial + offset,
-            label=rf"$f_1={pair[0]:g}, f_2={pair[1]:g}, y={target:+.2f}$",
+        input_axis, output_axis = row_axes
+        input_axis.plot(time_steps, trial_input, color=COLORS["blue"])
+        input_axis.axvspan(
+            first_window[0],
+            first_window[1] - 1,
+            **STIMULUS_WINDOW_STYLE,
         )
-    axes[0].axvspan(first_window[0], first_window[1] - 1, **STIMULUS_WINDOW_STYLE)
-    axes[0].axvspan(second_window[0], second_window[1] - 1, **STIMULUS_WINDOW_STYLE)
-    axes[0].axvspan(
-        inputs.shape[1] - decision_steps,
-        inputs.shape[1] - 1,
-        **DECISION_WINDOW_STYLE,
-    )
-    axes[0].set(xlabel="time step", yticks=[], title="Representative two-pulse inputs")
-    axes[0].legend(loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2)
+        input_axis.axvspan(
+            second_window[0],
+            second_window[1] - 1,
+            **STIMULUS_WINDOW_STYLE,
+        )
+        input_axis.set_ylabel(f"{pair[0]:g} − {pair[1]:g} Hz")
 
-    image = axes[1].imshow(
-        target_matrix,
-        origin="lower",
-        cmap=SIGNED_VALUE_CMAP,
-        norm=TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1),
-    )
-    _label_frequency_axes(axes[1], frequencies)
-    axes[1].set_title(r"Continuous target $(f_1-f_2)/24$")
-    fig.colorbar(image, ax=axes[1], label="normalized target $y$")
+        decision = float(np.mean(trial_output[-decision_steps:]))
+        output_axis.plot(
+            time_steps,
+            trial_output,
+            color=COLORS["blue"],
+            label="output",
+        )
+        output_axis.axhline(
+            target,
+            **REFERENCE_LINE_STYLE,
+            label="target",
+        )
+        output_axis.hlines(
+            decision,
+            decision_start,
+            num_steps - 1,
+            color=COLORS["gold"],
+            linewidth=2.5,
+            label="final decision",
+        )
+        output_axis.axvspan(
+            decision_start,
+            num_steps - 1,
+            **DECISION_WINDOW_STYLE,
+        )
+        output_axis.set_title(
+            f"target = {target:.3f}, decision = {decision:.3f}",
+            loc="right",
+        )
+
+    axes[0, 0].set_title("input")
+    axes[0, 1].legend(loc="upper left", ncols=3)
+    axes[-1, 0].set_xlabel("time step")
+    axes[-1, 1].set_xlabel("time step")
+    fig.suptitle("Representative fixed-delay trials")
+    fig.tight_layout()
     return fig, axes
 
 
@@ -247,6 +283,105 @@ def plot_latent_plane(
     )
     colorbar.set_label(colorbar_label)
     fig.tight_layout()
+    return fig, axis
+
+
+@typechecked
+def plot_readout_coefficients(
+    delay_steps: Real[np.ndarray, "delay"],
+    coefficients: Real[np.ndarray, "delay 2"],
+    *,
+    trained_delay: RealNumber,
+    annotation_delays: Sequence[RealNumber] = (),
+) -> tuple[plt.Figure, plt.Axes]:
+    """Show how decision-time readout weights change with the delay."""
+    delay_steps = np.asarray(delay_steps)
+    coefficients = np.asarray(coefficients)
+    fig, axis = plt.subplots(figsize=(8.5, 4.8), constrained_layout=True)
+    marker_interval = max(1, len(delay_steps) // 10)
+
+    axis.plot(
+        delay_steps,
+        coefficients[:, 0],
+        color=COLORS["blue"],
+        marker="o",
+        markevery=marker_interval,
+        label=r"first stimulus: $\beta_1$",
+    )
+    axis.plot(
+        delay_steps,
+        coefficients[:, 1],
+        color=COLORS["gold"],
+        linestyle="--",
+        marker="s",
+        markerfacecolor="white",
+        markevery=marker_interval,
+        label=r"second stimulus: $\beta_2$",
+    )
+    for ideal_value in (-1, 1):
+        axis.axhline(
+            ideal_value,
+            color=COLORS["gray"],
+            linestyle="--",
+            linewidth=1,
+            zorder=0,
+        )
+
+    axis.axvline(
+        trained_delay,
+        color=COLORS["gray"],
+        linestyle=":",
+        linewidth=1.2,
+    )
+    axis.text(
+        trained_delay,
+        0.48,
+        f"trained delay\n{trained_delay:g} steps",
+        transform=axis.get_xaxis_transform(),
+        ha="center",
+        va="center",
+        color=COLORS["gray"],
+        fontsize=9,
+        bbox={
+            "facecolor": "white",
+            "edgecolor": "none",
+            "alpha": 0.85,
+            "pad": 1.5,
+        },
+    )
+
+    for delay in annotation_delays:
+        index = int(np.argmin(np.abs(delay_steps - delay)))
+        axis.scatter(
+            delay_steps[index],
+            coefficients[index, 0],
+            color=COLORS["blue"],
+            edgecolor="white",
+            linewidth=0.8,
+            s=48,
+            zorder=4,
+        )
+        axis.annotate(
+            f"{coefficients[index, 0]:+.2f}",
+            xy=(delay_steps[index], coefficients[index, 0]),
+            xytext=(0, 8),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            color=COLORS["blue"],
+            fontsize=9,
+        )
+
+    axis.set(
+        xlabel="blank delay between stimuli (time steps)",
+        ylabel=r"fitted decision coefficient, $\beta_i$",
+        title=(
+            "Network A stimulus contributions by delay\n"
+            r"Fit over all 49 conditions: "
+            r"$\bar{z}=a+\beta_1\tilde{f}_1+\beta_2\tilde{f}_2$"
+        ),
+    )
+    axis.legend(loc="upper right")
     return fig, axis
 
 

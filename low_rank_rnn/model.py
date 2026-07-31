@@ -55,11 +55,11 @@ class LowRankRNN(nn.Module):
 
 
 def persistent_transient_rnn(n_units: int, *, seed: int) -> LowRankRNN:
-    """Initialize the structured two-mode network used for variable delays."""
+    """Sample an i.i.d. Gaussian persistent/transient rank-two network."""
     torch.manual_seed(seed)
     model = LowRankRNN(n_units, rank=2)
-    basis = torch.linalg.qr(torch.randn(n_units, 4)).Q * n_units**0.5
-    input_vector, persistent, transient, readout_residual = basis.T
+    loadings = torch.randn(n_units, 4)
+    input_vector, persistent, transient, readout_residual = loadings.T
 
     with torch.no_grad():
         model.I.copy_(input_vector)

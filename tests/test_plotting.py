@@ -14,8 +14,10 @@ from jaxtyping import TypeCheckError
 from low_rank_rnn import plotting
 from low_rank_rnn.plotting.style import (
     CHOICE_COLORS,
+    COLORS,
     COVARIANCE_CMAP,
     COVARIANCE_COLORS,
+    RESIDUAL_COLORS,
 )
 
 
@@ -301,6 +303,45 @@ class PlottingTests(unittest.TestCase):
             axes[1].get_title(),
             "Prediction residual  |  MSE=1.00e-02",
         )
+        residual_cmap = axes[1].images[0].get_cmap()
+        self.assertEqual(
+            to_hex(residual_cmap(0.0)),
+            RESIDUAL_COLORS["negative"].lower(),
+        )
+        self.assertEqual(
+            to_hex(residual_cmap(1.0)),
+            RESIDUAL_COLORS["positive"].lower(),
+        )
+        self.assertTrue(
+            {RESIDUAL_COLORS["negative"], RESIDUAL_COLORS["positive"]}.isdisjoint(
+                {COLORS["blue"], COLORS["gold"]}
+            )
+        )
+
+    def test_memory_trials_pair_each_input_with_its_output(self) -> None:
+        inputs = np.zeros((2, 10))
+        inputs[:, 2:4] = ((-0.5,), (0.5,))
+        inputs[:, 6:8] = ((0.5,), (-0.5,))
+        outputs = np.vstack((np.linspace(0, -1, 10), np.linspace(0, 1, 10)))
+
+        _, axes = plotting.plot_memory_trials(
+            np.array(((10, 34), (34, 10))),
+            inputs,
+            np.array((-1.0, 1.0)),
+            outputs,
+            first_window=(2, 4),
+            second_window=(6, 8),
+            decision_steps=2,
+        )
+
+        self.assertEqual(axes.shape, (2, 2))
+        np.testing.assert_allclose(axes[0, 0].lines[0].get_ydata(), inputs[0])
+        np.testing.assert_allclose(axes[0, 1].lines[0].get_ydata(), outputs[0])
+        self.assertIn("decision =", axes[0, 1].get_title(loc="right"))
+        self.assertEqual(
+            axes[0, 1].get_legend_handles_labels()[1],
+            ["output", "target", "final decision"],
+        )
 
     def test_latent_plane_uses_arrows_and_labeled_frequency_colorbar(self) -> None:
         trajectories = np.array(
@@ -322,6 +363,33 @@ class PlottingTests(unittest.TestCase):
         self.assertEqual(
             figure.axes[1].get_ylabel(),
             r"first stimulus frequency, $f_1$ (Hz)",
+        )
+
+    def test_readout_coefficients_mark_the_trained_delay_and_ideal_weights(
+        self,
+    ) -> None:
+        delay_steps = np.arange(25, 105, 5)
+        coefficients = np.column_stack(
+            (
+                np.cos(np.linspace(0, np.pi, len(delay_steps))),
+                -np.ones(len(delay_steps)),
+            )
+        )
+
+        _, axis = plotting.plot_readout_coefficients(
+            delay_steps,
+            coefficients,
+            trained_delay=50,
+            annotation_delays=(25, 50, 100),
+        )
+
+        np.testing.assert_allclose(axis.lines[0].get_ydata(), coefficients[:, 0])
+        np.testing.assert_allclose(axis.lines[1].get_ydata(), coefficients[:, 1])
+        self.assertEqual(axis.lines[4].get_xdata(), [50, 50])
+        self.assertEqual(len(axis.texts), 4)
+        self.assertEqual(
+            axis.get_ylabel(),
+            r"fitted decision coefficient, $\beta_i$",
         )
 
     def test_gaussian_pipeline_shows_every_sampled_network(self) -> None:

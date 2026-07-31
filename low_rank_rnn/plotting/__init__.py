@@ -30,6 +30,7 @@ from low_rank_rnn.plotting.working_memory import (
     plot_matched_network_comparison,
     plot_memory_behavior,
     plot_memory_trials,
+    plot_readout_coefficients,
 )
 
 __all__ = [
@@ -53,6 +54,7 @@ __all__ = [
     "plot_memory_trials",
     "plot_output_comparison",
     "plot_pca_summary",
+    "plot_readout_coefficients",
     "plot_reduced_system_accuracy",
     "plot_reduced_system_trajectories",
     "plot_training_loss",

@@ -38,10 +38,15 @@ SIGNED_VALUE_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     (CHOICE_COLORS[-1], "#F7F7F7", CHOICE_COLORS[1]),
 )
 
-# Residuals are a different quantity, so they use a distinct blue/gold scale.
+# Residuals use colors that do not overlap with the blue/gold rank colors.
+RESIDUAL_COLORS = {
+    "negative": COLORS["purple"],
+    "neutral": "#F7F7F7",
+    "positive": COLORS["green"],
+}
 RESIDUAL_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     "residual",
-    (COLORS["blue"], "#F7F7F7", COLORS["gold"]),
+    tuple(RESIDUAL_COLORS.values()),
 )
 FREQUENCY_CMAP = mpl.colormaps["viridis"]
 

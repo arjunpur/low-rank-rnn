@@ -6,11 +6,17 @@
 *.out
 *.synctex.gz
 
-# Note whose PDF lives in the knowledge base, not this repo
-output/pdf/oscillator_vs_line_attractor.tex
+# Generated outputs
+output/
 
 # Temporary render previews
 tmp/
+
+# Local agent instructions and working files
+AGENTS.md
+CLAUDE.md
+.claude/
+archive/
 
 # Local Python environment
 .venv/
