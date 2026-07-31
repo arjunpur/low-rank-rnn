@@ -14,7 +14,7 @@ from low_rank_rnn.plotting.style import (
     DECISION_WINDOW_STYLE,
     FREQUENCY_CMAP,
     REFERENCE_LINE_STYLE,
-    RESIDUAL_CMAP,
+    SIGNED_VALUE_CMAP,
     STIMULUS_WINDOW_STYLE,
 )
 
@@ -128,16 +128,9 @@ def plot_memory_behavior(
     mse: float,
     loss_threshold: float,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Plot training losses and the fixed-delay prediction residual."""
+    """Plot training losses and predictions across the frequency grid."""
     target_matrix = np.asarray(target_matrix)
     prediction_matrix = np.asarray(predictions).reshape(target_matrix.shape)
-    residual_matrix = prediction_matrix - target_matrix
-    residual_limit = max(float(np.max(np.abs(residual_matrix))), 1e-3)
-    residual_norm = TwoSlopeNorm(
-        vmin=-residual_limit,
-        vcenter=0,
-        vmax=residual_limit,
-    )
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), constrained_layout=True)
     axes[0].semilogy(rank_two_losses, color=COLORS["blue"], label="rank 2")
@@ -158,18 +151,18 @@ def plot_memory_behavior(
     )
     axes[0].legend()
 
-    residual_image = axes[1].imshow(
-        residual_matrix,
+    prediction_image = axes[1].imshow(
+        prediction_matrix,
         origin="lower",
-        cmap=RESIDUAL_CMAP,
-        norm=residual_norm,
+        cmap=SIGNED_VALUE_CMAP,
+        norm=TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1),
     )
     _label_frequency_axes(axes[1], frequencies)
-    axes[1].set_title(f"Prediction residual  |  MSE={mse:.2e}")
+    axes[1].set_title(f"Predicted $y$  |  MSE={mse:.2e}")
     fig.colorbar(
-        residual_image,
+        prediction_image,
         ax=axes[1],
-        label="prediction − target (separate scale)",
+        label="predicted normalized value $y$",
     )
     fig.suptitle("Working-memory behavior")
     return fig, axes
@@ -376,7 +369,7 @@ def plot_readout_coefficients(
         xlabel="blank delay between stimuli (time steps)",
         ylabel=r"fitted decision coefficient, $\beta_i$",
         title=(
-            "Network A stimulus contributions by delay\n"
+            "Oscillatory RNN stimulus contributions by delay\n"
             r"Fit over all 49 conditions: "
             r"$\bar{z}=a+\beta_1\tilde{f}_1+\beta_2\tilde{f}_2$"
         ),
@@ -386,27 +379,151 @@ def plot_readout_coefficients(
 
 
 @typechecked
+def plot_delay_mse(
+    delay_steps: Real[np.ndarray, "delay"],
+    mean_squared_errors: Real[np.ndarray, "delay"],
+    *,
+    title: str,
+    reference_delay: RealNumber | None = None,
+    reference_label: str = "reference delay",
+    annotation_delays: Sequence[RealNumber] = (),
+    annotation_labels: Sequence[str] = (),
+    x_ticks: Sequence[RealNumber] = (),
+    y_limit: RealNumber | None = None,
+) -> tuple[plt.Figure, plt.Axes]:
+    """Plot task prediction error across blank delays."""
+    delay_steps = np.asarray(delay_steps)
+    mean_squared_errors = np.asarray(mean_squared_errors)
+    if annotation_labels and len(annotation_labels) != len(annotation_delays):
+        raise ValueError(
+            "annotation_labels must match annotation_delays",
+        )
+
+    fig, axis = plt.subplots(figsize=(8, 4.5), constrained_layout=True)
+    axis.plot(
+        delay_steps,
+        mean_squared_errors,
+        color=COLORS["blue"],
+        linewidth=2.2,
+    )
+
+    upper_limit = (
+        float(y_limit)
+        if y_limit is not None
+        else 1.08 * float(mean_squared_errors.max())
+    )
+    upper_limit = max(upper_limit, 1e-3)
+    delay_span = float(delay_steps[-1] - delay_steps[0])
+
+    if reference_delay is not None:
+        reference_index = int(
+            np.argmin(np.abs(delay_steps - reference_delay))
+        )
+        reference_x = float(delay_steps[reference_index])
+        reference_y = float(mean_squared_errors[reference_index])
+        axis.axvline(
+            reference_x,
+            color=COLORS["gray"],
+            linestyle="--",
+            linewidth=1.2,
+        )
+        axis.scatter(
+            reference_x,
+            reference_y,
+            s=42,
+            color=COLORS["blue"],
+            edgecolor="white",
+            linewidth=1,
+            zorder=3,
+        )
+        axis.annotate(
+            f"{reference_label}\n{reference_x:g} steps",
+            xy=(reference_x, reference_y),
+            xytext=(
+                reference_x + 0.03 * delay_span,
+                0.16 * upper_limit,
+            ),
+            arrowprops={
+                "arrowstyle": "-",
+                "color": COLORS["gray"],
+                "linewidth": 1,
+            },
+            color="#27313B",
+            fontsize=9,
+        )
+
+    labels = (
+        annotation_labels
+        if annotation_labels
+        else tuple("selected delay" for _ in annotation_delays)
+    )
+    for delay, label in zip(annotation_delays, labels, strict=True):
+        index = int(np.argmin(np.abs(delay_steps - delay)))
+        annotation_x = float(delay_steps[index])
+        annotation_y = float(mean_squared_errors[index])
+        label_on_right = (
+            annotation_x
+            < float(delay_steps[0]) + 0.7 * delay_span
+        )
+        text_x = annotation_x + (
+            0.025 * delay_span if label_on_right else -0.18 * delay_span
+        )
+        axis.scatter(
+            annotation_x,
+            annotation_y,
+            s=38,
+            facecolor="white",
+            edgecolor=COLORS["blue"],
+            linewidth=1.5,
+            zorder=3,
+        )
+        axis.annotate(
+            f"{label}\n{annotation_x:g} steps",
+            xy=(annotation_x, annotation_y),
+            xytext=(
+                text_x,
+                min(annotation_y + 0.16 * upper_limit, 0.85 * upper_limit),
+            ),
+            arrowprops={
+                "arrowstyle": "-",
+                "color": COLORS["gray"],
+                "linewidth": 1,
+            },
+            color="#27313B",
+            fontsize=9,
+        )
+
+    axis.set(
+        xlabel="blank delay between stimuli (time steps)",
+        ylabel="mean squared error",
+        xlim=(delay_steps[0], delay_steps[-1]),
+        ylim=(0, upper_limit),
+    )
+    if len(x_ticks) > 0:
+        axis.set_xticks(x_ticks)
+    axis.set_title(title, loc="left")
+    return fig, axis
+
+
+@typechecked
 def plot_gaussian_pipeline(
     trained_mse: float,
     full_covariance_mse: float,
-    diagonal_mse: float,
     sampled_mses: Real[np.ndarray, "sample"],
     targets: Real[np.ndarray, "trial"],
     trained_decisions: Real[np.ndarray, "trial"],
     full_covariance_decisions: Real[np.ndarray, "trial"],
-    diagonal_decisions: Real[np.ndarray, "trial"],
     *,
     threshold: float,
     title: str,
     score_label: str,
     readout_title: str,
 ) -> tuple[plt.Figure, np.ndarray]:
-    """Compare a trained RNN, two circuits, and finite Gaussian samples."""
+    """Compare a trained RNN, its Gaussian circuit, and finite samples."""
     sampled_mses = np.asarray(sampled_mses)
     categories = (
         "source\ntrained RNN",
         "full-covariance\nGaussian circuit",
-        "handout diagonal\ncircuit",
         "finite Gaussian-\nsampled RNNs",
     )
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)
@@ -419,13 +536,6 @@ def plot_gaussian_pipeline(
             "s",
             "full-covariance Gaussian circuit",
         ),
-        (
-            2,
-            diagonal_mse,
-            COLORS["gold"],
-            "^",
-            "handout diagonal circuit",
-        ),
     ):
         axes[0].scatter(
             position,
@@ -436,7 +546,7 @@ def plot_gaussian_pipeline(
             zorder=3,
             label=label,
         )
-    sample_positions = 3 + np.linspace(-0.16, 0.16, len(sampled_mses))
+    sample_positions = 2 + np.linspace(-0.16, 0.16, len(sampled_mses))
     axes[0].scatter(
         sample_positions,
         sampled_mses,
@@ -471,12 +581,6 @@ def plot_gaussian_pipeline(
             "s",
             "full-covariance Gaussian circuit",
         ),
-        (
-            diagonal_decisions,
-            COLORS["gold"],
-            "^",
-            "handout diagonal circuit",
-        ),
     ):
         axes[1].scatter(
             targets,
@@ -492,7 +596,6 @@ def plot_gaussian_pipeline(
         np.max(np.abs(targets)),
         np.max(np.abs(trained_decisions)),
         np.max(np.abs(full_covariance_decisions)),
-        np.max(np.abs(diagonal_decisions)),
     )
     axes[1].plot(
         (-limit, limit),
@@ -511,52 +614,3 @@ def plot_gaussian_pipeline(
     axes[1].legend()
     fig.suptitle(title)
     return fig, axes
-
-
-@typechecked
-def plot_matched_network_comparison(
-    delays_ms: Real[np.ndarray, "delay"],
-    network_a_mses: Real[np.ndarray, "delay"],
-    network_b_mses: Real[np.ndarray, "delay"],
-    *,
-    threshold: float,
-) -> tuple[plt.Figure, plt.Axes]:
-    """Compare both trained networks on one variable-delay test battery."""
-    delays_ms = np.asarray(delays_ms)
-    network_a_mses = np.asarray(network_a_mses)
-    network_b_mses = np.asarray(network_b_mses)
-
-    fig, axis = plt.subplots(figsize=(9, 4.8), constrained_layout=True)
-    marker_interval = max(1, len(delays_ms) // 12)
-    axis.plot(
-        delays_ms,
-        network_a_mses,
-        color=COLORS["blue"],
-        marker="D",
-        markevery=marker_interval,
-        label="Network A — fixed-delay trained",
-    )
-    axis.plot(
-        delays_ms,
-        network_b_mses,
-        color=COLORS["gold"],
-        linestyle="--",
-        marker="o",
-        markerfacecolor="white",
-        markevery=marker_interval,
-        label="Network B — variable-delay trained",
-    )
-    axis.axhline(
-        threshold,
-        **REFERENCE_LINE_STYLE,
-        label=f"task criterion = {threshold:g}",
-    )
-    axis.set_yscale("log")
-    axis.set(
-        xlabel="blank delay (ms)",
-        ylabel="condition-balanced MSE",
-        title="Matched variable-delay evaluation of Networks A and B",
-    )
-    axis.set_xticks((500, 1000, 1500, 2000))
-    axis.legend()
-    return fig, axis

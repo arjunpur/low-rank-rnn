@@ -1,19 +1,11 @@
-"""Training and evaluation for the perceptual decision-making task."""
+"""Training and evaluation for low-rank RNN tasks."""
 
-from collections.abc import Sequence
-
-import numpy as np
 import torch
-from jaxtyping import Float, Integer, Real
+from jaxtyping import Float, Real
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.data.working_memory import (
-    DELAYS,
-    FREQUENCIES,
-    sample_variable_delay_trials,
-)
 
 
 @typechecked
@@ -84,76 +76,6 @@ def train_model(
         if should_log:
             print(f"Epoch {epoch_number}: loss={epoch_loss:.6f}")
 
-    return losses
-
-
-@typechecked
-def masked_decision_loss(
-    outputs: Float[torch.Tensor, "batch time"],
-    targets: Float[torch.Tensor, "batch"],
-    decision_mask: Float[torch.Tensor, "batch time"],
-) -> Float[torch.Tensor, ""]:
-    """Mean squared error over each trial's own decision window."""
-    squared_error = (outputs - targets[:, None]).square()
-    return (squared_error * decision_mask).sum() / decision_mask.sum()
-
-
-@typechecked
-def train_variable_delay(
-    model: nn.Module,
-    stages: Sequence[Integer[np.ndarray, "_"]] = (DELAYS,),
-    *,
-    rng: np.random.Generator,
-    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
-    num_trials: int = 256,
-    epochs_per_stage: int = 300,
-    learning_rate: float = 5e-3,
-    batch_size: int | None = None,
-    max_gradient_norm: float | None = None,
-) -> list[float]:
-    """Train on random delays, one curriculum stage at a time.
-
-    Each stage draws a fresh trial set from its own range of delays; the
-    optimizer carries over between stages. ``frequencies`` defines the values
-    sampled for each stimulus. A single stage spanning the whole range trains
-    the task without a curriculum, and a single stage holding one delay trains
-    the fixed-delay version of the task. ``batch_size`` defaults to full batch;
-    set it smaller for minibatch SGD. Returns the mean loss per epoch.
-    """
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    losses = []
-
-    model.train()
-    for stage_delays in stages:
-        inputs, targets, decision_mask = sample_variable_delay_trials(
-            num_trials,
-            stage_delays,
-            rng=rng,
-            frequencies=frequencies,
-        )
-        batches = DataLoader(
-            TensorDataset(inputs, targets, decision_mask),
-            batch_size=batch_size if batch_size is not None else num_trials,
-            shuffle=True,
-        )
-        for _ in range(epochs_per_stage):
-            total_loss = 0.0
-            for batch_inputs, batch_targets, batch_mask in batches:
-                outputs, _ = model(batch_inputs)
-                loss = masked_decision_loss(outputs, batch_targets, batch_mask)
-
-                optimizer.zero_grad()
-                loss.backward()
-                if max_gradient_norm is not None:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(),
-                        max_gradient_norm,
-                    )
-                optimizer.step()
-                total_loss += loss.item() * len(batch_inputs)
-            losses.append(total_loss / num_trials)
-
-    model.eval()
     return losses
 
 

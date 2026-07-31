@@ -1,14 +1,7 @@
-"""Fixed- and variable-delay parametric working-memory tasks.
-
-The paper samples the blank delay from 500-2000 ms. With the model's 20 ms time
-step that is 25-100 integer steps. The first stimulus stays fixed in time, while
-the second stimulus and the decision window move together on each trial, so
-trials are padded to a common length and carry a per-trial decision mask.
-"""
+"""Fixed-delay parametric working-memory task."""
 
 import numpy as np
-import torch
-from jaxtyping import Float, Integer, Real
+from jaxtyping import Float, Real
 
 from low_rank_rnn._typing import typechecked
 
@@ -22,19 +15,6 @@ FIXED_FIRST_WINDOW = (5, 11)
 FIXED_SECOND_WINDOW = (60, 71)
 FIXED_DECISION_STEPS = 5
 FIXED_TRIAL_STEPS = 80
-
-VARIABLE_FIXATION_STEPS = 5
-VARIABLE_STIMULUS_STEPS = 5
-VARIABLE_DECISION_STEPS = 5
-DELAYS = np.arange(25, 101)
-VARIABLE_TRIAL_STEPS = (
-    VARIABLE_FIXATION_STEPS
-    + VARIABLE_STIMULUS_STEPS
-    + DELAYS.max()
-    + VARIABLE_STIMULUS_STEPS
-    + VARIABLE_DECISION_STEPS
-)
-
 
 @typechecked
 def stimulus_amplitudes(
@@ -88,64 +68,6 @@ def sample_fixed_delay_trials(
     )
     inputs, targets = make_fixed_delay_trials(pairs)
     return pairs, inputs, targets
-
-
-@typechecked
-def make_variable_delay_trials(
-    frequencies: Real[np.ndarray, "trial 2"],
-    delays: Integer[np.ndarray, "trial"],
-) -> tuple[
-    Float[torch.Tensor, "trial time"],
-    Float[torch.Tensor, "trial"],
-    Float[torch.Tensor, "trial time"],
-]:
-    """Build padded trials and mask each trial's own decision window.
-
-    ``frequencies`` holds the ``(f_1, f_2)`` pair for each trial and ``delays``
-    the blank interval between them, in time steps.
-    """
-    amplitudes = stimulus_amplitudes(frequencies)
-    delays = np.asarray(delays, dtype=int)
-
-    inputs = np.zeros((len(amplitudes), VARIABLE_TRIAL_STEPS), dtype=np.float32)
-    decision_mask = np.zeros_like(inputs)
-    first_start = VARIABLE_FIXATION_STEPS
-    first_stop = first_start + VARIABLE_STIMULUS_STEPS
-    inputs[:, first_start:first_stop] = amplitudes[:, 0, None]
-
-    for trial, delay in enumerate(delays):
-        second_start = first_stop + delay
-        second_stop = second_start + VARIABLE_STIMULUS_STEPS
-        decision_stop = second_stop + VARIABLE_DECISION_STEPS
-        inputs[trial, second_start:second_stop] = amplitudes[trial, 1]
-        decision_mask[trial, second_stop:decision_stop] = 1
-
-    targets = amplitudes[:, 0] - amplitudes[:, 1]
-    return tuple(
-        torch.as_tensor(values, dtype=torch.float32)
-        for values in (inputs, targets, decision_mask)
-    )
-
-
-@typechecked
-def sample_variable_delay_trials(
-    num_trials: int,
-    delays: Integer[np.ndarray, "delay"] = DELAYS,
-    *,
-    rng: np.random.Generator,
-    frequencies: Real[np.ndarray, "frequency"] = FREQUENCIES,
-) -> tuple[
-    Float[torch.Tensor, "trial time"],
-    Float[torch.Tensor, "trial"],
-    Float[torch.Tensor, "trial time"],
-]:
-    """Draw frequency pairs and delays uniformly, then build the trials."""
-    sampled_frequencies = rng.choice(
-        np.asarray(frequencies),
-        size=(num_trials, 2),
-    )
-    sampled_delays = rng.choice(np.asarray(delays), size=num_trials)
-    return make_variable_delay_trials(sampled_frequencies, sampled_delays)
 
 
 @typechecked

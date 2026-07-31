@@ -38,16 +38,6 @@ SIGNED_VALUE_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
     (CHOICE_COLORS[-1], "#F7F7F7", CHOICE_COLORS[1]),
 )
 
-# Residuals use colors that do not overlap with the blue/gold rank colors.
-RESIDUAL_COLORS = {
-    "negative": COLORS["purple"],
-    "neutral": "#F7F7F7",
-    "positive": COLORS["green"],
-}
-RESIDUAL_CMAP = mpl.colors.LinearSegmentedColormap.from_list(
-    "residual",
-    tuple(RESIDUAL_COLORS.values()),
-)
 FREQUENCY_CMAP = mpl.colormaps["viridis"]
 
 STIMULUS_WINDOW_STYLE = {

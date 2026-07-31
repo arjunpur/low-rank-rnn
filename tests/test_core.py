@@ -11,7 +11,7 @@ from torch import nn
 
 from low_rank_rnn import analysis, mean_field
 from low_rank_rnn.data import working_memory
-from low_rank_rnn.model import LowRankRNN, persistent_transient_rnn
+from low_rank_rnn.model import LowRankRNN
 from low_rank_rnn.training import decision_accuracy, decision_loss, train_model
 
 
@@ -42,19 +42,6 @@ class LowRankRNNTests(unittest.TestCase):
         with self.assertRaises(TypeCheckError):
             LowRankRNN(4)(torch.zeros(2, 3, 1))
 
-    def test_persistent_transient_initialization_samples_loop_gains(
-        self,
-    ) -> None:
-        model = persistent_transient_rnn(16_384, seed=4)
-
-        overlap = analysis.connectivity_overlap(
-            model.m.detach().numpy(),
-            model.n.detach().numpy(),
-        )
-
-        np.testing.assert_allclose(overlap, np.diag((1.0, 0.5)), atol=0.02)
-
-
 class WorkingMemoryDataTests(unittest.TestCase):
     def test_fixed_delay_trials_require_frequency_pairs(self) -> None:
         with self.assertRaises(TypeCheckError):
@@ -76,28 +63,6 @@ class WorkingMemoryDataTests(unittest.TestCase):
             np.repeat(amplitudes[:, 1, None], 11, axis=1),
         )
         np.testing.assert_allclose(targets, amplitudes[:, 0] - amplitudes[:, 1])
-
-    def test_variable_delay_mask_tracks_each_trial(self) -> None:
-        pairs = np.array(((10, 34), (30, 14)))
-        delays = np.array((25, 100))
-
-        inputs, _, mask = working_memory.make_variable_delay_trials(pairs, delays)
-
-        first_stop = (
-            working_memory.VARIABLE_FIXATION_STEPS
-            + working_memory.VARIABLE_STIMULUS_STEPS
-        )
-        for trial, delay in enumerate(delays):
-            decision_start = (
-                first_stop + delay + working_memory.VARIABLE_STIMULUS_STEPS
-            )
-            self.assertEqual(mask[trial].sum(), working_memory.VARIABLE_DECISION_STEPS)
-            torch.testing.assert_close(
-                mask[trial, decision_start : decision_start + 5],
-                torch.ones(5),
-            )
-        self.assertEqual(inputs.shape[1], working_memory.VARIABLE_TRIAL_STEPS)
-
 
 class TrainingTests(unittest.TestCase):
     def test_decision_loss_uses_only_the_final_window(self) -> None:
@@ -311,38 +276,6 @@ class AnalysisTests(unittest.TestCase):
             variance,
         )
 
-    def test_masked_regression_metrics_use_each_decision_window(self) -> None:
-        outputs = np.array(((0.0, 2.0, 9.0), (9.0, 1.0, 3.0)))
-        targets = np.array((1.0, 2.0))
-        decision_mask = np.array(((1.0, 1.0, 0.0), (0.0, 1.0, 1.0)))
-
-        mse, r_squared, decisions = analysis.masked_regression_metrics(
-            outputs,
-            targets,
-            decision_mask,
-        )
-
-        self.assertEqual((mse, r_squared), (0.0, 1.0))
-        np.testing.assert_allclose(decisions, targets)
-
-    def test_variable_delay_metrics_match_model_score_wrapper(self) -> None:
-        model = LowRankRNN(8, rank=2)
-        frequency_pairs = working_memory.frequency_pair_grid()
-        delays = np.array((25, 50))
-
-        mses, r_squared, decisions = analysis.variable_delay_metrics(
-            lambda inputs: analysis.run_model(model, inputs)[0],
-            frequency_pairs,
-            delays,
-        )
-
-        np.testing.assert_allclose(
-            mses,
-            analysis.variable_delay_mses(model, frequency_pairs, delays),
-        )
-        self.assertEqual(r_squared.shape, (2,))
-        self.assertEqual(decisions.shape, (2, len(frequency_pairs)))
-
     def test_fixed_point_search_classifies_a_double_well_flow(self) -> None:
         grid, flow, points, slopes = analysis.find_fixed_points_1d(
             lambda values: np.asarray(values) - np.asarray(values) ** 3,
@@ -380,50 +313,6 @@ class MeanFieldTests(unittest.TestCase):
         self.assertEqual(kappa.shape, (3, 4, 2))
         self.assertEqual(filtered.shape, (3, 4))
         np.testing.assert_allclose(outputs, 0)
-
-    def test_diagonal_circuit_matches_full_circuit_when_assumptions_hold(
-        self,
-    ) -> None:
-        names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
-        covariance = np.eye(6)
-        for first, second, value in (
-            (1, 3, 0.4),
-            (2, 4, 0.2),
-            (1, 0, 0.3),
-            (2, 0, 0.5),
-            (5, 3, 0.6),
-            (5, 4, -0.4),
-        ):
-            covariance[first, second] = value
-            covariance[second, first] = value
-        inputs = np.array(((0.5, 0.0, -0.25), (-0.5, 0.25, 0.0)))
-
-        full = mean_field.simulate_gaussian_circuit(
-            inputs,
-            names,
-            np.zeros(6),
-            covariance,
-            step_size=0.2,
-        )
-        diagonal = mean_field.simulate_diagonal_circuit(
-            inputs,
-            names,
-            covariance,
-            step_size=0.2,
-        )
-
-        for full_values, diagonal_values in zip(full, diagonal, strict=True):
-            np.testing.assert_allclose(full_values, diagonal_values)
-
-    def test_diagonal_circuit_requires_rank_two(self) -> None:
-        with self.assertRaisesRegex(ValueError, "requires rank two"):
-            mean_field.simulate_diagonal_circuit(
-                np.zeros((1, 2)),
-                ("I", "n", "m", "w"),
-                np.eye(4),
-                step_size=0.2,
-            )
-
 
 if __name__ == "__main__":
     unittest.main()

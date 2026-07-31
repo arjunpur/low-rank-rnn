@@ -24,10 +24,10 @@ from low_rank_rnn.plotting.perceptual_decision_making import (
 )
 from low_rank_rnn.plotting.style import set_plot_style
 from low_rank_rnn.plotting.working_memory import (
+    plot_delay_mse,
     plot_gaussian_pipeline,
     plot_latent_plane,
     plot_latent_sweeps,
-    plot_matched_network_comparison,
     plot_memory_behavior,
     plot_memory_trials,
     plot_readout_coefficients,
@@ -42,6 +42,7 @@ __all__ = [
     "plot_covariance_comparison",
     "plot_decision_summary",
     "plot_decision_trials",
+    "plot_delay_mse",
     "plot_explained_variance",
     "plot_fixed_points",
     "plot_gaussian_sampling_summary",
@@ -49,7 +50,6 @@ __all__ = [
     "plot_latent_plane",
     "plot_latent_sweeps",
     "plot_loading_distributions",
-    "plot_matched_network_comparison",
     "plot_memory_behavior",
     "plot_memory_trials",
     "plot_output_comparison",

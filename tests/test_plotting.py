@@ -14,10 +14,8 @@ from jaxtyping import TypeCheckError
 from low_rank_rnn import plotting
 from low_rank_rnn.plotting.style import (
     CHOICE_COLORS,
-    COLORS,
     COVARIANCE_CMAP,
     COVARIANCE_COLORS,
-    RESIDUAL_COLORS,
 )
 
 
@@ -280,11 +278,11 @@ class PlottingTests(unittest.TestCase):
         sampling_figure.canvas.draw()
         performance_figure.canvas.draw()
 
-    def test_memory_behavior_shows_losses_and_residual(self) -> None:
+    def test_memory_behavior_shows_losses_and_prediction_grid(self) -> None:
         targets = np.array(((-1.0, 0.0), (0.0, 1.0)))
         predictions = targets.ravel() + 0.1
 
-        _, axes = plotting.plot_memory_behavior(
+        figure, axes = plotting.plot_memory_behavior(
             (1.0, 0.1),
             (1.0, 0.5),
             targets,
@@ -297,25 +295,21 @@ class PlottingTests(unittest.TestCase):
         self.assertEqual(axes.shape, (2,))
         self.assertEqual(
             axes[1].images[0].get_cmap().name,
-            "residual",
+            "signed_value",
         )
         self.assertEqual(
             axes[1].get_title(),
-            "Prediction residual  |  MSE=1.00e-02",
+            "Predicted $y$  |  MSE=1.00e-02",
         )
-        residual_cmap = axes[1].images[0].get_cmap()
+        np.testing.assert_allclose(
+            axes[1].images[0].get_array(),
+            predictions.reshape(targets.shape),
+        )
+        self.assertEqual(axes[1].images[0].norm.vmin, -1)
+        self.assertEqual(axes[1].images[0].norm.vmax, 1)
         self.assertEqual(
-            to_hex(residual_cmap(0.0)),
-            RESIDUAL_COLORS["negative"].lower(),
-        )
-        self.assertEqual(
-            to_hex(residual_cmap(1.0)),
-            RESIDUAL_COLORS["positive"].lower(),
-        )
-        self.assertTrue(
-            {RESIDUAL_COLORS["negative"], RESIDUAL_COLORS["positive"]}.isdisjoint(
-                {COLORS["blue"], COLORS["gold"]}
-            )
+            figure.axes[-1].get_ylabel(),
+            "predicted normalized value $y$",
         )
 
     def test_memory_trials_pair_each_input_with_its_output(self) -> None:
@@ -392,25 +386,59 @@ class PlottingTests(unittest.TestCase):
             r"fitted decision coefficient, $\beta_i$",
         )
 
+    def test_delay_mse_marks_reference_and_recurrence_delays(self) -> None:
+        delay_steps = np.arange(25, 351)
+        mean_squared_errors = 0.2 * (
+            1 - np.cos(2 * np.pi * (delay_steps - 49) / 138)
+        )
+
+        _, axis = plotting.plot_delay_mse(
+            delay_steps,
+            mean_squared_errors,
+            title="Prediction error over extended delays",
+            reference_delay=49,
+            reference_label="trained delay",
+            annotation_delays=(187,),
+            annotation_labels=("low error again",),
+            x_ticks=(25, 49, 100, 150, 200, 250, 300, 350),
+            y_limit=0.5,
+        )
+
+        np.testing.assert_allclose(
+            axis.lines[0].get_ydata(),
+            mean_squared_errors,
+        )
+        self.assertEqual(axis.lines[1].get_xdata(), [49, 49])
+        self.assertEqual(axis.get_ylim(), (0, 0.5))
+        self.assertEqual(
+            axis.get_title(loc="left"),
+            "Prediction error over extended delays",
+        )
+        self.assertEqual(
+            tuple(text.get_text() for text in axis.texts),
+            (
+                "trained delay\n49 steps",
+                "low error again\n187 steps",
+            ),
+        )
+
     def test_gaussian_pipeline_shows_every_sampled_network(self) -> None:
         sampled_mses = np.array((0.1, 0.2, 0.3))
 
         _, axes = plotting.plot_gaussian_pipeline(
             0.001,
             0.01,
-            0.02,
             sampled_mses,
             np.array((-1.0, 0.0, 1.0)),
             np.array((-1.0, 0.0, 1.0)),
             np.array((-0.8, 0.0, 0.8)),
-            np.array((-0.6, 0.0, 0.6)),
             threshold=0.005,
             title="Covariance pipeline",
             score_label="MSE",
             readout_title="Readouts",
         )
 
-        sampled_points = axes[0].collections[3]
+        sampled_points = axes[0].collections[2]
         np.testing.assert_allclose(
             sampled_points.get_offsets()[:, 1],
             sampled_mses,
@@ -420,48 +448,23 @@ class PlottingTests(unittest.TestCase):
             (
                 "source\ntrained RNN",
                 "full-covariance\nGaussian circuit",
-                "handout diagonal\ncircuit",
                 "finite Gaussian-\nsampled RNNs",
             ),
         )
         np.testing.assert_allclose(
             [
                 collection.get_offsets()[0, 1]
-                for collection in axes[0].collections[:3]
+                for collection in axes[0].collections[:2]
             ],
-            (0.001, 0.01, 0.02),
+            (0.001, 0.01),
         )
         self.assertEqual(
             axes[1].get_legend_handles_labels()[1],
             [
                 "source trained RNN",
                 "full-covariance Gaussian circuit",
-                "handout diagonal circuit",
             ],
         )
-
-    def test_matched_network_comparison_plots_full_delay_battery(self) -> None:
-        delays_ms = np.arange(500, 1300, 100)
-        network_a_mses = np.linspace(0.001, 0.2, len(delays_ms))
-        network_b_mses = np.linspace(0.003, 0.005, len(delays_ms))
-
-        _, axis = plotting.plot_matched_network_comparison(
-            delays_ms,
-            network_a_mses,
-            network_b_mses,
-            threshold=0.005,
-        )
-
-        np.testing.assert_allclose(
-            axis.lines[0].get_ydata(),
-            network_a_mses,
-        )
-        np.testing.assert_allclose(
-            axis.lines[1].get_ydata(),
-            network_b_mses,
-        )
-        np.testing.assert_allclose(axis.lines[0].get_xdata(), delays_ms)
-        self.assertEqual(axis.get_yscale(), "log")
 
     def test_training_loss_labels_curriculum_stages(self) -> None:
         _, axis = plotting.plot_training_loss(

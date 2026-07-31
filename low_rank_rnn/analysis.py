@@ -6,10 +6,9 @@ from copy import deepcopy
 import numpy as np
 from scipy.optimize import minimize_scalar
 import torch
-from jaxtyping import Complex, Float, Integer, Real
+from jaxtyping import Complex, Float, Real
 
 from low_rank_rnn._typing import typechecked
-from low_rank_rnn.data.working_memory import make_variable_delay_trials
 from low_rank_rnn.model import LowRankRNN
 
 
@@ -53,24 +52,6 @@ def regression_metrics(
     total_variation = np.sum((targets - targets.mean()) ** 2)
     r_squared = 1 - float(np.sum(residuals**2) / total_variation)
     return mse, r_squared
-
-
-@typechecked
-def masked_regression_metrics(
-    outputs: Real[np.ndarray, "batch time"],
-    targets: Real[np.ndarray, "batch"],
-    decision_mask: Real[np.ndarray, "batch time"],
-) -> tuple[float, float, Float[np.ndarray, "batch"]]:
-    """Score each trial's mean readout over its own decision window."""
-    outputs = np.asarray(outputs)
-    targets = np.asarray(targets)
-    decision_mask = np.asarray(decision_mask)
-    decisions = (
-        (outputs * decision_mask).sum(axis=1)
-        / decision_mask.sum(axis=1)
-    )
-    mse, r_squared = regression_metrics(decisions, targets)
-    return mse, r_squared, decisions
 
 
 @typechecked
@@ -326,35 +307,6 @@ def svd_canonical_model(model: LowRankRNN) -> tuple[LowRankRNN, float]:
 
 
 @typechecked
-def real_overlap_modes(
-    model: LowRankRNN,
-) -> tuple[
-    Float[np.ndarray, "unit rank"],
-    Float[np.ndarray, "unit rank"],
-    Float[np.ndarray, "rank"],
-]:
-    """Return unit-RMS real modes ordered from slowest to fastest."""
-    raw_m = model.m.detach().cpu().numpy().astype(float)
-    raw_n = model.n.detach().cpu().numpy().astype(float)
-    values, vectors = np.linalg.eig(connectivity_overlap(raw_m, raw_n))
-    order = np.argsort(-values.real)
-    values = values[order]
-    if np.max(np.abs(values.imag)) >= 1e-6:
-        raise ValueError("recurrent overlap does not have real modes")
-
-    transform = vectors[:, order].real
-    mode_m = raw_m @ transform
-    mode_n = raw_n @ np.linalg.inv(transform).T
-
-    scales = np.linalg.norm(mode_m, axis=0) / np.sqrt(model.n_units)
-    mode_m = mode_m / scales
-    mode_n = mode_n * scales
-    signs = np.sign(mode_n.T @ model.I.detach().cpu().numpy())
-    signs[signs == 0] = 1
-    return mode_m * signs, mode_n * signs, values.real
-
-
-@typechecked
 def _project_states(
     states: Real[np.ndarray, "... unit"],
     basis: Real[np.ndarray, "unit latent"],
@@ -415,56 +367,6 @@ def latent_jacobian_eigenvalues(
         values = torch.linalg.eigvals(jacobian)
         eigenvalues.append(values[torch.argsort(-values.real)])
     return torch.stack(eigenvalues).cpu().numpy()
-
-
-def variable_delay_metrics(
-    simulate: Callable[[np.ndarray], Real[np.ndarray, "trial time"]],
-    frequency_pairs: Real[np.ndarray, "trial 2"],
-    delays: Integer[np.ndarray, "probe"],
-) -> tuple[
-    Float[np.ndarray, "probe"],
-    Float[np.ndarray, "probe"],
-    Float[np.ndarray, "probe trial"],
-]:
-    """Score one simulator on the same balanced grid at several delays."""
-    frequency_pairs = np.asarray(frequency_pairs)
-    mses = []
-    r_squared_values = []
-    decisions_by_delay = []
-    for delay in np.asarray(delays, dtype=int):
-        inputs, targets, decision_mask = make_variable_delay_trials(
-            frequency_pairs,
-            np.full(len(frequency_pairs), delay),
-        )
-        outputs = simulate(inputs.numpy())
-        mse, r_squared, decisions = masked_regression_metrics(
-            outputs,
-            targets.numpy(),
-            decision_mask.numpy(),
-        )
-        mses.append(mse)
-        r_squared_values.append(r_squared)
-        decisions_by_delay.append(decisions)
-    return (
-        np.asarray(mses),
-        np.asarray(r_squared_values),
-        np.asarray(decisions_by_delay),
-    )
-
-
-@typechecked
-def variable_delay_mses(
-    model: LowRankRNN,
-    frequency_pairs: Real[np.ndarray, "trial 2"],
-    delays: Integer[np.ndarray, "probe"],
-) -> Float[np.ndarray, "probe"]:
-    """Evaluate condition-balanced decision MSE at each probe delay."""
-    mses, _, _ = variable_delay_metrics(
-        lambda inputs: run_model(model, inputs)[0],
-        frequency_pairs,
-        delays,
-    )
-    return mses
 
 
 @typechecked
