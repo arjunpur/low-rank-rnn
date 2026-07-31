@@ -339,7 +339,7 @@ class PlottingTests(unittest.TestCase):
         inputs[:, 6:8] = ((0.5,), (-0.5,))
         outputs = np.vstack((np.linspace(0, -1, 10), np.linspace(0, 1, 10)))
 
-        _, axes = plotting.plot_memory_trials(
+        figure, axes = plotting.plot_memory_trials(
             np.array(((10, 34), (34, 10))),
             inputs,
             np.array((-1.0, 1.0)),
@@ -357,6 +357,7 @@ class PlottingTests(unittest.TestCase):
             axes[0, 1].get_legend_handles_labels()[1],
             ["output", "target", "final decision"],
         )
+        self.assertEqual(figure.get_suptitle(), "Representative trials")
 
     def test_latent_plane_uses_arrows_and_labeled_frequency_colorbar(self) -> None:
         trajectories = np.array(
@@ -407,14 +408,13 @@ class PlottingTests(unittest.TestCase):
             predictions,
             ("Fitted covariance", "Paper covariance"),
             mean_squared_errors=np.array((0.0, 0.1)),
-            r_squared_values=np.array((1.0, 0.5)),
             title="Circuit accuracy",
         )
 
         self.assertEqual(axes.shape, (2,))
         self.assertEqual(
             axes[1].get_title(),
-            "Paper covariance\nMSE=0.1000, $R^2$=0.500",
+            "Paper covariance\nMSE=0.1000",
         )
         np.testing.assert_allclose(
             axes[0].collections[0].get_offsets()[:, 1],
@@ -445,6 +445,10 @@ class PlottingTests(unittest.TestCase):
         )
         self.assertEqual(axis.lines[1].get_xdata(), [49, 49])
         self.assertEqual(axis.get_ylim(), (0, 0.5))
+        self.assertEqual(
+            axis.get_xlabel(),
+            "delay between stimuli (time steps)",
+        )
         self.assertEqual(
             axis.get_title(loc="left"),
             "Prediction error over extended delays",

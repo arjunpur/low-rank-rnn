@@ -112,7 +112,7 @@ def plot_memory_trials(
     axes[0, 1].legend(loc="upper left", ncols=3)
     axes[-1, 0].set_xlabel("time step")
     axes[-1, 1].set_xlabel("time step")
-    fig.suptitle("Representative fixed-delay trials")
+    fig.suptitle("Representative trials")
     fig.tight_layout()
     return fig, axes
 
@@ -346,7 +346,6 @@ def plot_regression_comparison(
     system_labels: Sequence[str],
     *,
     mean_squared_errors: Real[np.ndarray, "system"],
-    r_squared_values: Real[np.ndarray, "system"],
     title: str,
 ) -> tuple[plt.Figure, np.ndarray]:
     """Compare predicted and target values for several systems."""
@@ -369,11 +368,10 @@ def plot_regression_comparison(
         squeeze=False,
     )
     axes = axes.ravel()
-    for axis, system_predictions, mse, r_squared, label in zip(
+    for axis, system_predictions, mse, label in zip(
         axes,
         predictions,
         mean_squared_errors,
-        r_squared_values,
         system_labels,
         strict=True,
     ):
@@ -389,7 +387,7 @@ def plot_regression_comparison(
             ylim=(-limit, limit),
             xlabel="target",
             ylabel="circuit decision",
-            title=f"{label}\nMSE={mse:.4f}, $R^2$={r_squared:.3f}",
+            title=f"{label}\nMSE={mse:.4f}",
         )
         axis.set_aspect("equal", adjustable="box")
 
@@ -513,7 +511,7 @@ def plot_delay_mse(
         )
 
     axis.set(
-        xlabel="blank delay between stimuli (time steps)",
+        xlabel="delay between stimuli (time steps)",
         ylabel="mean squared error",
         xlim=(delay_steps[0], delay_steps[-1]),
         ylim=(0, upper_limit),

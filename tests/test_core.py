@@ -245,8 +245,8 @@ class AnalysisTests(unittest.TestCase):
 
         np.testing.assert_allclose(projected, states.numpy())
 
-    def test_regression_metrics_and_principal_component_analysis(self) -> None:
-        mse, r_squared = analysis.regression_metrics(
+    def test_regression_mse_and_principal_component_analysis(self) -> None:
+        mse = analysis.regression_mse(
             np.array((-1.0, 1.0)),
             np.array((-1.0, 1.0)),
         )
@@ -255,7 +255,7 @@ class AnalysisTests(unittest.TestCase):
             states
         )
 
-        self.assertEqual((mse, r_squared), (0.0, 1.0))
+        self.assertEqual(mse, 0.0)
         np.testing.assert_allclose(variance, (1.0, 0.0))
         np.testing.assert_allclose(
             np.abs(components),

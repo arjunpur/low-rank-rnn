@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 import numpy as np
 from scipy.optimize import minimize_scalar
 import torch
-from jaxtyping import Complex, Float, Real
+from jaxtyping import Float, Real
 
 from low_rank_rnn._typing import typechecked
 from low_rank_rnn.model import LowRankRNN
@@ -38,18 +38,14 @@ def decision_values(
 
 
 @typechecked
-def regression_metrics(
+def regression_mse(
     predictions: Real[np.ndarray, "sample"],
     targets: Real[np.ndarray, "sample"],
-) -> tuple[float, float]:
-    """Return mean squared error and coefficient of determination."""
+) -> float:
+    """Return the mean squared regression error."""
     predictions = np.asarray(predictions)
     targets = np.asarray(targets)
-    residuals = predictions - targets
-    mse = float(np.mean(residuals**2))
-    total_variation = np.sum((targets - targets.mean()) ** 2)
-    r_squared = 1 - float(np.sum(residuals**2) / total_variation)
-    return mse, r_squared
+    return float(np.mean((predictions - targets) ** 2))
 
 
 @typechecked
@@ -65,7 +61,7 @@ def network_regression_mses(
     for model in models:
         outputs, _ = run_model(model, inputs)
         decisions = decision_values(outputs, decision_steps)
-        scores.append(regression_metrics(decisions, targets)[0])
+        scores.append(regression_mse(decisions, targets))
     return np.asarray(scores)
 
 
@@ -82,7 +78,7 @@ def regression_mses_by_condition(
     for inputs in input_batches:
         outputs = simulate_outputs(np.asarray(inputs))
         decisions = decision_values(outputs, decision_steps)
-        scores.append(regression_metrics(decisions, targets)[0])
+        scores.append(regression_mse(decisions, targets))
     return np.asarray(scores)
 
 
@@ -314,45 +310,6 @@ def simulate_and_project(
     """Run a model and project its states into a supplied basis."""
     outputs, states = run_model(model, inputs)
     return outputs, states, _project_states(states, basis)
-
-
-@torch.no_grad()
-@typechecked
-def latent_jacobian_eigenvalues(
-    model: LowRankRNN,
-    states: Real[np.ndarray, "state unit"] | Real[torch.Tensor, "state unit"],
-    *,
-    m: (
-        Real[np.ndarray, "unit rank"]
-        | Real[torch.Tensor, "unit rank"]
-        | None
-    ) = None,
-    n: (
-        Real[np.ndarray, "unit rank"]
-        | Real[torch.Tensor, "unit rank"]
-        | None
-    ) = None,
-) -> Complex[np.ndarray, "state rank"]:
-    """Linearize the recurrent latent flow at each supplied network state."""
-    state_tensor = torch.as_tensor(states, dtype=model.m.dtype)
-    mode_m = (
-        model.m.detach()
-        if m is None
-        else torch.as_tensor(m, dtype=model.m.dtype)
-    )
-    mode_n = (
-        model.n.detach()
-        if n is None
-        else torch.as_tensor(n, dtype=model.n.dtype)
-    )
-    identity = torch.eye(mode_m.shape[1], dtype=mode_m.dtype)
-    eigenvalues = []
-    for state in state_tensor:
-        gain = 1 - torch.tanh(state).square()
-        jacobian = mode_n.T @ (gain[:, None] * mode_m) / model.n_units - identity
-        values = torch.linalg.eigvals(jacobian)
-        eigenvalues.append(values[torch.argsort(-values.real)])
-    return torch.stack(eigenvalues).cpu().numpy()
 
 
 @typechecked
