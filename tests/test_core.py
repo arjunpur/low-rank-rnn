@@ -9,7 +9,7 @@ import torch
 from jaxtyping import TypeCheckError
 from torch import nn
 
-from low_rank_rnn import analysis, mean_field
+from low_rank_rnn import analysis, equivalent_circuit
 from low_rank_rnn.data import working_memory
 from low_rank_rnn.model import LowRankRNN
 from low_rank_rnn.training import decision_accuracy, decision_loss, train_model
@@ -306,10 +306,10 @@ class AnalysisTests(unittest.TestCase):
         np.testing.assert_allclose(slopes, (-2.0, 1.0, -2.0), atol=1e-4)
 
 
-class MeanFieldTests(unittest.TestCase):
+class EquivalentCircuitTests(unittest.TestCase):
     def test_gaussian_circuit_requires_square_loading_covariance(self) -> None:
         with self.assertRaises(TypeCheckError):
-            mean_field.simulate_gaussian_circuit(
+            equivalent_circuit.simulate_gaussian_circuit(
                 np.zeros((3, 4)),
                 ("I", "n", "m", "w"),
                 np.zeros(4),
@@ -320,7 +320,7 @@ class MeanFieldTests(unittest.TestCase):
     def test_gaussian_circuit_returns_rank_generic_histories(self) -> None:
         names = ("I", "n_1", "n_2", "m_1", "m_2", "w")
 
-        outputs, kappa, filtered = mean_field.simulate_gaussian_circuit(
+        outputs, kappa, filtered = equivalent_circuit.simulate_gaussian_circuit(
             np.zeros((3, 4)),
             names,
             np.zeros(6),
@@ -334,7 +334,7 @@ class MeanFieldTests(unittest.TestCase):
         np.testing.assert_allclose(outputs, 0)
 
     def test_paper_working_memory_gaussian_has_reported_couplings(self) -> None:
-        names, mean, covariance = mean_field.paper_working_memory_gaussian()
+        names, mean, covariance = equivalent_circuit.paper_working_memory_gaussian()
 
         couplings = analysis.named_covariances(
             names,

@@ -16,7 +16,7 @@ the main figures are available in [`report/report.pdf`](report/report.pdf).
 - `low_rank_rnn/data/` generates the decision-making and working-memory tasks.
 - `low_rank_rnn/analysis.py` contains projections, connectivity analysis, PCA,
   and fixed-point tools.
-- `low_rank_rnn/mean_field.py` implements the reduced Gaussian circuits.
+- `low_rank_rnn/equivalent_circuit.py` implements the reduced Gaussian circuits.
 - `low_rank_rnn/plotting/` contains the plotting code used by the notebook.
 - `tests/` contains the unit tests.
 - `report/` contains the report source, generated figures, and final PDF.
@@ -60,7 +60,7 @@ make -C report pdf
   held-out sign accuracy. Its latent dynamics form two stable decision
   attractors, separated by an unstable fixed point at the origin.
 - Ten networks sampled from the fitted rank-one loading distribution also
-  reach 100% accuracy. The corresponding one-dimensional mean-field circuit
+  reach 100% accuracy. The corresponding one-dimensional equivalent circuit
   reproduces the trained network's behavior.
 - The rank-two network solves the fixed-delay working-memory task with an MSE
   of 0.000373, while the rank-one control cannot solve the task.

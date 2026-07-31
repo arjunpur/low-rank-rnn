@@ -273,7 +273,6 @@ All networks used $N=512$ neurons. The rank-one perceptual decision network was 
 where $k$ indexes trials, $t$ indexes timesteps, $z_{k,t}$ is the network readout, $\hat{z}_{k,t}$ is the target, and $M_t\in\{0,1\}$ is nonzero only on decision steps.
 
 \end{multicols}
-\fullfigure[0.91]{rank1-training-input-output.pdf}{Representative perceptual decision-making inputs and corresponding rank-one RNN outputs.}{fig:training-input-output}
 \begin{multicols}{2}
 \section{Results}
 
@@ -416,7 +415,7 @@ with latent coordinates $\kappa_1,\kappa_2$ and input coordinate $v$ obeying
 \textbf{Overfit performance}. From the observation that our trained network relies on the oscillatory timescale to solve the task, we hypothesized that the network would only perform when the delay between the stimuli was tuned to a fixed period. We thus varied the delay between the stimuli and tested the network's performance (MSE) across a large range of delays. We found that the network's performance oscillates with the delay - a clear signal that the network is overfit to the delay between the stimuli.
 
 \end{multicols}
-\fullfigure[0.72]{rank2-delay-generalization.pdf}{Mean-squared error of the network with stimuli separated by a varying delay. Task performance oscillates with the delay, showing a clear phase preference}{fig:rank2-delay-generalization}
+\fullfigure[0.71]{rank2-delay-generalization.pdf}{Mean-squared error of the network with stimuli separated by a varying delay. Task performance oscillates with the delay, showing a clear phase preference}{fig:rank2-delay-generalization}
 \begin{multicols}{2}
 \textbf{Equivalent circuit.} As our training procedure didn't produce a network with the dynamics called out in \citet{dubreuil2022}, we next asked how a network with no cross-mode covariances solves the task. We used the covariances listed in \citet{dubreuil2022} and constructed the equivalent circuit with only the self-feedback covariance terms.
 \begin{align}
@@ -472,7 +471,7 @@ Taken together, our results show that the low-rank framework is a useful tool fo
 
 No AI was used in writing the report.
 
-AI coding tools were used to help with plotting and analysis, not with the core model and training.
+AI coding tools were used to help with plotting, analysis, and refactoring code, not with the core model and training.
 
 \begin{thebibliography}{2}
 \footnotesize

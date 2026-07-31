@@ -1,4 +1,4 @@
-"""Gaussian mean-field circuits for low-rank RNNs."""
+"""Gaussian equivalent circuits for low-rank RNNs."""
 
 from collections.abc import Sequence
 
