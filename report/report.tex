@@ -1,497 +1,501 @@
-% ============================================================================
-% DESIGN 1 — "THE JOURNAL"
-% A reusable, single-file LaTeX report template styled like a premium
-% computational-neuroscience journal (Nature Neuroscience / eLife / Neuron).
-%
-% Compile with:  latexmk -pdf -interaction=nonstopmode report.tex
-%
-% HOW TO USE THIS TEMPLATE
-%   * Everything above the "CONTENT" banner is design/config. Edit the macros
-%     in the "AUTHOR-EDITABLE FRONT MATTER" block (title, authors, etc.).
-%   * Everything below the "CONTENT" banner is the manuscript body. Swap in
-%     your own prose, equations, table rows, figures, and references there.
-% ============================================================================
-
 \documentclass[10pt]{article}
 
-% ======================= STYLE / PREAMBLE ===================================
-% All design decisions live in this region: packages, fonts, colors, section
-% formatting, floats, and custom commands. An author swapping content should
-% not need to touch anything here.
-% ----------------------------------------------------------------------------
-
-% ---- Page geometry: tight, professional two-column margins -----------------
-\usepackage[letterpaper,margin=0.85in,columnsep=0.28in]{geometry}
-
-% ---- Fonts: Cochineal serif for body + math; Biolinum sans for headings ----
+% Page and type system
+\usepackage[letterpaper,top=0.72in,bottom=0.78in,left=0.72in,right=0.72in,columnsep=0.27in]{geometry}
 \usepackage[T1]{fontenc}
-\usepackage[proportional,scaled=0.96]{cochineal} % refined serif, text figures
-\usepackage[cochineal]{newtxmath}                  % matching math
-\usepackage{biolinum}                              % crisp sans for headings
-\usepackage[scaled=0.85]{beramono}                 % compact mono for listings
-\usepackage{microtype}                             % refined spacing/protrusion
+\usepackage[proportional,scaled=0.96]{cochineal}
+\usepackage[cochineal]{newtxmath}
+\usepackage{biolinum}
+\usepackage{microtype}
 
-% ---- Color: exactly one accent (deep teal) --------------------------------
+% Structure and figures
 \usepackage[dvipsnames]{xcolor}
-\definecolor{accent}{HTML}{0E5C63}   % the single sophisticated accent
-\definecolor{rulegray}{HTML}{B9BDC0} % neutral hairlines only
-
-% ---- Core layout / typesetting packages ------------------------------------
-\usepackage{titlesec}    % small-caps headings with a colored keyline
-\usepackage{tcolorbox}   % full-width tinted abstract box
-\tcbuselibrary{skins}    % enables enhanced skin / borderline rules
-\usepackage{enumitem}
-\usepackage{booktabs}    % clean journal table rules
-\usepackage{caption}     % accent figure/table labels
-\usepackage{fancyhdr}    % running header with a thin rule
-\usepackage{graphicx}    % report figures exported from the notebook
-\usepackage{listings}    % code listing
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{booktabs}
 \usepackage{amsmath}
-\usepackage{multicol}    % journal columns around full-width inline figures
-\usepackage{tikz}        % figure placeholder schematic
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{multicol}
+\usepackage{fancyhdr}
+\usepackage[authoryear,round]{natbib}
 \usepackage[colorlinks=true,allcolors=accent]{hyperref}
+
+\definecolor{accent}{HTML}{0E5C63}
+\definecolor{rulegray}{HTML}{B9BDC0}
 \graphicspath{{figures/}}
 
-% ---- Running header: short title (left) / page number (right) --------------
+\newcommand{\thetitlefull}{Decision Making in Low-Rank Recurrent Neural Networks}
+\newcommand{\thetitleshort}{Decision Making in Low-Rank RNNs}
+\newcommand{\theauthors}{Arjun Puri \quad Samuel Delsol \quad Sebastian Valero Dorado}
+\newcommand{\thedate}{July 2026}
+\hypersetup{
+  pdftitle={\thetitlefull},
+  pdfauthor={Arjun Puri, Samuel Delsol, Sebastian Valero Dorado}
+}
+
 \pagestyle{fancy}
 \fancyhf{}
+\fancyhead[L]{\footnotesize\sffamily\scshape\thetitleshort}
+\fancyhead[R]{\footnotesize\sffamily\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
-\renewcommand{\headrule}{\hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
-\fancyhead[L]{\footnotesize\scshape\thetitleshort}
-\fancyhead[R]{\footnotesize\thepage}
+\renewcommand{\headrule}{%
+  \hbox to\headwidth{\color{rulegray}\leaders\hrule height \headrulewidth\hfill}}
 \setlength{\headheight}{19pt}
 
-% ---- Section headings: sans small caps + accent number + accent keyline ----
 \titleformat{\section}
   {\normalfont\sffamily\bfseries\large\scshape}
-  {\color{accent}\thesection}{0.6em}{}
-  [\vspace{2pt}{\color{accent}\titlerule[0.9pt]}]
+  {\color{accent}\thesection}{0.55em}{}
+  [\vspace{2pt}{\color{accent}\titlerule[0.8pt]}]
 \titleformat{\subsection}
   {\normalfont\sffamily\bfseries\normalsize}
   {\color{accent}\thesubsection}{0.5em}{}
-\titlespacing*{\section}{0pt}{1.4ex plus .3ex}{0.8ex}
-\titlespacing*{\subsection}{0pt}{1.1ex plus .2ex}{0.5ex}
+\titlespacing*{\section}{0pt}{1.7ex plus .4ex}{0.9ex}
+\titlespacing*{\subsection}{0pt}{1.3ex plus .3ex}{0.6ex}
 
-% ---- Captions: small bold accent label, smaller caption text ---------------
 \captionsetup{
-  font=small,
+  font=footnotesize,
   labelfont={bf,color=accent},
   labelsep=period,
   justification=justified,
   singlelinecheck=false,
-  hypcap=false
+  hypcap=false,
+  skip=3pt
 }
 
-% ---- Code listing style (monochrome, journal-restrained) -------------------
-\lstdefinestyle{journal}{
-  basicstyle=\ttfamily\scriptsize,
-  keywordstyle=\color{accent}\bfseries,
-  commentstyle=\itshape\color{rulegray},
-  numberstyle=\tiny\color{rulegray},
-  language=Python,
-  showstringspaces=false,
-  breaklines=true,
-  columns=fullflexible,
-  frame=leftline,
-  framesep=6pt,
-  rulecolor=\color{accent},
-  xleftmargin=8pt,
-  aboveskip=1ex,belowskip=0.5ex,
-}
-\lstset{style=journal}
-
-% ---- Custom command: full-width abstract box (spans both columns) ----------
-\newcommand{\abstractbox}[1]{%
-  \begin{tcolorbox}[
-      enhanced, sharp corners, boxrule=0pt, frame hidden,
-      colback=accent!5, borderline west={2pt}{0pt}{accent},
-      left=10pt,right=10pt,top=8pt,bottom=8pt,
-      before skip=4pt, after skip=10pt]
-    \small
-    {\sffamily\bfseries\scshape\color{accent}Abstract\quad}#1
-  \end{tcolorbox}%
+\newcommand{\reportfigurescale}{0.90}
+\newcommand{\fullfigure}[4][0.9]{%
+  \par\vspace{0.35\baselineskip}%
+  \noindent\begin{minipage}{\textwidth}
+    \centering
+    \scalebox{\reportfigurescale}{\includegraphics[width=#1\textwidth]{#2}}%
+    \captionof{figure}{#3}%
+    \label{#4}%
+  \end{minipage}%
+  \par\vspace{0.35\baselineskip}%
 }
 
-% ======================= AUTHOR-EDITABLE FRONT MATTER =======================
-% Swap these macros for the real manuscript metadata.
-% ----------------------------------------------------------------------------
-\newcommand{\thetitlefull}{Decision Making in Low-Rank Recurrent Neural Networks}
-\newcommand{\thetitleshort}{Decision Making in Low-Rank RNNs} % running head
-\newcommand{\theauthors}{Arjun Puri \quad Samuel Delsol \quad Sebastian Valero Dorado}
-\newcommand{\theaffiliation}{Department of Neuroscience, [Institution].\quad
-  Correspondence: \href{mailto:arjunpur2@gmail.com}{arjunpur2@gmail.com}}
-\newcommand{\thedate}{July 2026}
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0pt}
+\setlength{\multicolsep}{4pt plus 1pt minus 1pt}
+\setlength{\bibsep}{0.35ex}
+\renewcommand{\bibsection}{\section{References}}
+\setlist{nosep,leftmargin=*}
+\raggedbottom
+\emergencystretch=1em
 
-% ============================================================================
-% ============================  CONTENT  =====================================
-% Everything below is the manuscript. Replace prose, equations, table rows,
-% and references with your own; the styling above will carry through.
-% ============================================================================
 \begin{document}
 
-% ---- Full-width title block (single column across the page) ----------------
-\begingroup\centering
-  {\color{accent}\rule{\textwidth}{1.1pt}}\par\vspace{0.6em}
-  {\sffamily\bfseries\LARGE \thetitlefull\par}\vspace{0.7em}
-  {\scshape\large \theauthors\par}\vspace{0.4em}
-  {\footnotesize \theaffiliation\par}\vspace{0.2em}
-  {\footnotesize \thedate\par}\vspace{0.5em}
+\begingroup
+\centering
+  {\color{accent}\rule{\textwidth}{1.1pt}}\par\vspace{0.65em}
+  {\sffamily\bfseries\LARGE \thetitlefull\par}\vspace{0.65em}
+  {\scshape\large \theauthors\par}\vspace{0.35em}
+  {\footnotesize \thedate\par}\vspace{0.55em}
   {\color{accent}\rule{\textwidth}{0.4pt}}\par
 \endgroup
-\vspace{1em}
+\vspace{1.1em}
 
 \begin{multicols}{2}
 
-% ---------------------------------------------------------------------------
 \section{Introduction}
 
 \subsection{Overview}
 
-In this report, we investigate how low-rank RNNs, as an interpretable computational framework, learn to solve decision-making and working memory tasks. Our work builds on Dubreuil et al. 2022, a paper that used the low-rank RNN framework to examine the role of functional subpopulations in solving common cognitive neuroscience tasks. For this report, we scope our work to the learned dynamics of a single population's latents and the statistics of its connectivity parameters.
+In this report, we investigate how low-rank RNNs, as an interpretable computational framework, learn to solve decision-making and working-memory tasks. Our work builds on \citet{dubreuil2022}, who used the low-rank RNN framework to examine the role of functional subpopulations in solving common cognitive neuroscience tasks. For this report, we scope our work to the learned latent dynamics of a single population and the statistics of its connectivity parameters.
 
-In essence, the low-rank RNN framework relies on containing the recurrent connectivity of the network to a low-dimensional subspace (via constraining the connectivity matrix), allowing us to both analytically and computationally examine the latent trajectories of the full system in a smaller subspace. We find that the statistics of the recurrent connectivity vectors are sufficient to form an equivalent low-dimensional circuit that can solve the given cognitive tasks with comparable accuracy to the high-dimensional RNN.
+In essence, the low-rank RNN framework relies on constraining the recurrent connectivity of the network to a low-dimensional subspace, allowing us to examine the latent trajectories of the full system both analytically and computationally. We find that the statistics of the recurrent connectivity vectors are sufficient to form an equivalent low-dimensional circuit that can solve the given cognitive tasks with accuracy comparable to that of the high-dimensional RNN.
 
-In this report, we first lay out the essential ideas of the low-rank RNN framework and how they are used. We examine the findings of rank-one networks on a perceptual decision-making task. Finally, we turn to a parametric working memory task with rank-two networks, contrasting the two results.
+We first lay out the essential ideas of the low-rank RNN framework and how they are used. We then examine rank-one networks on a perceptual decision-making task. Finally, we turn to a parametric working-memory task with rank-two networks and contrast the two results.
 
-\subsection{Essence of the Results}
-
-% ---------------------------------------------------------------------------
 \section{Methods}
 
-In this section, we first discuss the analytical structure of the low rank RNN framework, and then outline the computational method we employed to evaluate the results suggested by the analytical reduction.
+In this section, we first discuss the analytical structure of the low-rank RNN framework and then outline the computational method we employed to evaluate the results suggested by the analytical reduction.
 
-In essence, the analytical reduction takes on two steps: we start by explaining how an N-dimensional RNN with low-rank connectivity can be viewed through the lens of a trajectory in a low-dimensional latent space. Then, we reason about how the second-order statistics of the network's loading space (connectivity parameters) give rise to a simple, low-dimensional system that performs the essential computation of the original network. This is where the interpretability power of the low-rank RNN framework lies.
+In essence, the analytical reduction takes two steps: we start by explaining how an $N$-dimensional RNN with low-rank connectivity can be viewed through the lens of a trajectory in a low-dimensional latent space. Then, we reason about how the second-order statistics of the network's loading space (connectivity parameters) give rise to a simple, low-dimensional system that performs the essential computation of the original network. This is where the interpretability of the low-rank RNN framework lies.
 
 \subsection{Model}
 
-For our model, we use $N = 128$ leaky neurons driven by recurrent activity and a weighted scalar input. $\mathbf{x}(t)\in\mathbb{R}^N$ is the population state, $\tau$ the neural time constant, $\mathbf{I}$ the input weights, $u(t)$ the scalar input, and $z(t)$ a linear readout with weights $\mathbf{w}$:
-
-\[
-\begin{aligned}
+For our model, we use $N = 512$ leaky neurons driven by recurrent activity and a weighted scalar input. $\mathbf{x}(t)\in\mathbb{R}^N$ is the population state, $\tau$ the neural time constant, $\mathbf{I}$ the input weights, $u(t)$ the scalar input, and $z(t)$ a linear readout with weights $\mathbf{w}$:
+\begin{align}
 \tau\frac{d\mathbf{x}}{dt}
-&=-\mathbf{x}+\mathbf{J}\phi(\mathbf{x})+\mathbf{I}u(t),\\
-\phi(\mathbf{x})&=\tanh(\mathbf{x}),
-\qquad
+&=-\mathbf{x}+\mathbf{J}\phi(\mathbf{x})+\mathbf{I}u(t), \notag\\
+\phi(\mathbf{x})&=\tanh(\mathbf{x}), \qquad
 z(t)=\frac{1}{N}\mathbf{w}^{\top}\phi(\mathbf{x}).
-\end{aligned}
-\]
+\end{align}
 
 \subsection{Latent Dynamics}
 
 The core of the low-rank RNN framework rests on constraining $\mathbf{J}$ to rank $R$ via a factorization into left and right connectivity vectors $\mathbf{m}^{(r)},\mathbf{n}^{(r)}\in\mathbb{R}^N$ for $r=1,\ldots,R$:
-\[
+\begin{equation}
 \mathbf{J}
 =\frac{1}{N}\sum_{r=1}^{R}\mathbf{m}^{(r)}\bigl(\mathbf{n}^{(r)}\bigr)^{\top}
 =\frac{1}{N}\mathbf{M}\mathbf{N}^{\top}
-\]
-where $\mathbf{M},\mathbf{N}\in\mathbb{R}^{N\times R}$ . For $R=1$ this reduces to $\mathbf{J}=\frac{1}{N}\mathbf{m}\mathbf{n}^{\top}$; for the rank-two working-memory networks below, $R=2$.
+\end{equation}
+where $\mathbf{M},\mathbf{N}\in\mathbb{R}^{N\times R}$. For $R=1$, this reduces to $\mathbf{J}=\frac{1}{N}\mathbf{m}\mathbf{n}^{\top}$; for the rank-two working-memory networks below, $R=2$.
 
-In essence, this rank constraint ensures that the population activity $\mathbf{x}(t)$ stays in the low-dimensional subspace spanned by the columns of $\mathbf{M}$ and $\mathbf{I}$. We define the rate projection $\hat{\boldsymbol{\kappa}}(t)=\frac{1}{N}\mathbf{N}^{\top}\phi(\mathbf{x}(t))$ as the dynamical target for the latent coordinates $\boldsymbol{\kappa}(t)\in\mathbb{R}^{R}$. Using the basis $\{\mathbf{M},\mathbf{I}_{\perp}\}$ to isolate recurrent and input directions, the population state is
-\[
-\mathbf{x}(t)=\mathbf{M}\boldsymbol{\kappa}(t)+\mathbf{I}_{\perp}v(t).
-\]
-Substituting this decomposition into the RNN equation and matching coefficients along $\mathbf{M}$ and $\mathbf{I}_{\perp}$ yields the latent dynamics below (see Methods of Dubreuil et al. 2022 - Population structure in computations through neural dynamics (Nature Neuroscience).pdf for details). We are then able to fully describe the low rank network in terms of it's latent dynamics, the input dynamics, and the readout.
-\[
-\tau\dot{\boldsymbol{\kappa}}=-\boldsymbol{\kappa}+\hat{\boldsymbol{\kappa}},
-\qquad
-\hat{\boldsymbol{\kappa}}=\frac{1}{N}\mathbf{N}^{\top}\phi\!\bigl(\mathbf{M}\boldsymbol{\kappa}+\mathbf{I}_{\perp}v\bigr),
-\]
-\[
+In essence, this rank constraint ensures that the population activity $\mathbf{x}(t)$ stays in the low-dimensional subspace spanned by the columns of $\mathbf{M}$ and the raw input vector $\mathbf{I}$. We define the rate projection $\hat{\boldsymbol{\kappa}}(t)=\frac{1}{N}\mathbf{N}^{\top}\phi(\mathbf{x}(t))$ as the dynamical target for the latent coordinates $\boldsymbol{\kappa}(t)\in\mathbb{R}^{R}$. In the same coordinates used by the implementation, the population state is
+\begin{equation}
+\mathbf{x}(t)=\mathbf{M}\boldsymbol{\kappa}(t)+\mathbf{I}v(t).
+\end{equation}
+Substituting this decomposition into the RNN equation and matching coefficients along $\mathbf{M}$ and $\mathbf{I}$ yields the latent dynamics below (see the Methods of \citet{dubreuil2022} for details). We are then able to fully describe the low-rank network in terms of its latent dynamics, input dynamics, and readout.
+\begin{align}
+\tau\dot{\boldsymbol{\kappa}}
+&=-\boldsymbol{\kappa}+\hat{\boldsymbol{\kappa}}, \notag\\
+\hat{\boldsymbol{\kappa}}
+&=\frac{1}{N}\mathbf{N}^{\top}\phi\!\bigl(
+\mathbf{M}\boldsymbol{\kappa}+\mathbf{I}v\bigr),
+\end{align}
+\begin{equation}
 \tau\dot{v}=-v+u(t),
-\]
-\[
-z=\frac{1}{N}\mathbf{w}^{\top}\phi\!\bigl(\mathbf{M}\boldsymbol{\kappa}+\mathbf{I}_{\perp}v\bigr).
-\]
+\end{equation}
+\begin{equation}
+z=\frac{1}{N}\mathbf{w}^{\top}\phi\!\bigl(
+\mathbf{M}\boldsymbol{\kappa}+\mathbf{I}v\bigr).
+\end{equation}
 
-From this, we are able to study the latent trajectories in the basis $\{\mathbf{M},\mathbf{I}_{\perp}\}$. Below is a plot showing the coordinates $\kappa, v$ over the course of the perceptual decision making task. The latent coordinate $\kappa$ slowly accumulates evidence for the mean stimulus strength as input is provided, and the system converges to a fixed attractor point once the stimulus is turned off, allowing for a linear weighed readout of the result.
+For visualization only, we orthogonalize $\mathbf{I}$ against $\operatorname{span}(\mathbf{M})$ to construct plotting axes. This is a change of basis for the projection, not a substitution of $\mathbf{I}_{\perp}$ into the dynamical derivation above.
 
 \subsection{Loading Space}
 
-While in the above section we were able to inspect what the low-rank RNNs are doing in the latent space, this section shows how the population as a whole arrives at this computation. The crux of this analytical step is to show that the network of neurons can be described solely by its connectivity parameters in what the original authors term the "Loading Space".
+While the previous section allowed us to inspect what the low-rank RNNs are doing in latent space, this section shows how the population as a whole arrives at this computation. The crux of this analytical step is to show that the network of neurons can be described solely by its connectivity parameters in what \citet{dubreuil2022} term the ``loading space.''
 
-From looking at rate projection, $\hat{\kappa}_r$, we notice that it is built solely from a sum over a function of the network's connectivity parameters. This allows us to treat the rate projection as an empirical average over a distribution of the connectivity parameters where each neuron becomes a point $\mathbf{a}_i=\bigl(n_i^{(1)},\,m_i^{(1)},\,\ldots,\,n_i^{(R)},\,m_i^{(R)},\,w_i,\,I_i\bigr)$ in a $(2R + 2)$-dimensional loading space ($R$ dimensions for each $n$ and $m$, with two added dimensions for $w$ and $I$).
-\[
+Looking at the rate projection, $\hat{\kappa}_r$, we notice that it is built solely from a sum over a function of the network's connectivity parameters. This allows us to treat the rate projection as an empirical average over a distribution of the connectivity parameters, where each neuron becomes a point $\mathbf{a}_i=\bigl(n_i^{(1)},\,m_i^{(1)},\,\ldots,\,n_i^{(R)},\,m_i^{(R)},\,w_i,\,I_i\bigr)$ in a $(2R + 2)$-dimensional loading space ($R$ dimensions for each $n$ and $m$, with two added dimensions for $w$ and $I$).
+\begin{equation}
 \hat{\kappa}_r(t)
 =\frac{1}{N}\sum_{j=1}^{N} n^{(r)}_j\,
 \phi\!\left(\sum_{r'=1}^{R}\kappa_{r'}(t)\,m^{(r')}_j
-+I_{\perp,j}\,v(t)\right)
-\]
++I_j\,v(t)\right)
+\end{equation}
 In the linear regime of $\tanh$ ($\phi(x)\approx x$), this average expands immediately into overlaps of the loading coordinates:
-\[
+\begin{align}
 \hat{\kappa}_r
-\approx\sum_{r'=1}^{R}\sigma_{n^{(r)}m^{(r')}}\,\kappa_{r'}
-+\sigma_{n^{(r)}I_{\perp}}\,v,
-\qquad
-\sigma_{ab}\equiv\frac{1}{N}\sum_{j=1}^{N}a_j b_j,
-\]
-and likewise $z\approx\sum_{r}\sigma_{wm^{(r)}}\kappa_r+\sigma_{wI_{\perp}}v$. The latent and readout dynamics are therefore controlled by the covariances of the loading-space cloud. The full nonlinear case replaces these by the same covariances times a population gain (see Methods of Dubreuil et al. 2022 - Population structure in computations through neural dynamics (Nature Neuroscience).pdf for the full explanation). Below, we document the key results without derivation (single population, for clarity). We assume that the parameters come from a zero-mean Gaussian distribution.
-\[
-\begin{aligned}
+&\approx\sum_{r'=1}^{R}
+\sigma_{n^{(r)}m^{(r')}}\,\kappa_{r'}
++\sigma_{n^{(r)}I}\,v, \notag\\
+\sigma_{ab}&\equiv\frac{1}{N}\sum_{j=1}^{N}a_j b_j,
+\end{align}
+and likewise $z\approx\sum_{r}\sigma_{wm^{(r)}}\kappa_r+\sigma_{wI}v$. The latent and readout dynamics are therefore controlled by the covariances of the loading-space cloud. The full nonlinear case replaces these by the same covariances times a population gain (see the Methods of \citet{dubreuil2022} for the full explanation). Below, we document the key results without derivation (single population, for clarity). We assume that the parameters come from a zero-mean Gaussian distribution.
+\begin{align}
 \tau\dot{\kappa}_r
 &=-\kappa_r
-+\sum_{r'=1}^{R}\tilde{\sigma}_{n^{(r)}m^{(r')}}\kappa_{r'}
-+\tilde{\sigma}_{n^{(r)}I_{\perp}}v,\\
++\sum_{r'=1}^{R}
+\tilde{\sigma}_{n^{(r)}m^{(r')}}\kappa_{r'}
++\tilde{\sigma}_{n^{(r)}I}v, \notag\\
 z
 &=\sum_{r=1}^{R}\tilde{\sigma}_{wm^{(r)}}\kappa_r
-+\tilde{\sigma}_{wI_{\perp}}v,
-\end{aligned}
-\]
++\tilde{\sigma}_{wI}v,
+\end{align}
 with effective couplings $\tilde{\sigma}_{ab}=\sigma_{ab}\,\langle\Phi'\rangle(\Delta)$, average gain
-\[
+\begin{equation}
 \langle\Phi'\rangle(\Delta)
 =\frac{1}{\sqrt{2\pi}}
 \int_{-\infty}^{+\infty}
 dz\,e^{-z^{2}/2}\,\phi'(\Delta z),
-\]
+\end{equation}
 and standard deviation of the recurrent currents
-\[
+\begin{equation}
 \Delta
 =\sqrt{
 \sum_{r'=1}^{R}\sigma_{m^{(r')}}^{2}\kappa_{r'}^{2}
-+\sigma_{I_{\perp}}^{2}v^{2}
++\sigma_I^{2}v^{2}
 }.
-\]
-For $P$ subpopulations the paper writes more generally $\tilde{\sigma}_{ab}=\sum_{p=1}^{P}\alpha_p\sigma_{ab}^{(p)}\langle\Phi'\rangle_p$ with $\langle\Phi'\rangle_p=\langle\Phi'\rangle(\Delta^{(p)})$
+\end{equation}
+For $P$ subpopulations, \citet{dubreuil2022} write more generally $\tilde{\sigma}_{ab}=\sum_{p=1}^{P}\alpha_p\sigma_{ab}^{(p)}\langle\Phi'\rangle_p$, with $\langle\Phi'\rangle_p=\langle\Phi'\rangle(\Delta^{(p)})$.
 
-We, however, focus on a single population which results in gain applied across all second-order moments.
+We, however, focus on a single population, which results in a shared gain applied across all second-order moments.
 
-Intuitively, this analytical reduction shows that the high dimensional RNN can be viewed as a low dimensional dynamical system governed by the second-order moments of the loading space.
+Intuitively, this analytical reduction shows that the high-dimensional RNN can be viewed as a low-dimensional dynamical system governed by the second-order moments of the loading space.
 
-\textbf{TODO:} Tie your results into these equations. Briefly state whether these equations make sense to use in the context of the covariances you identified.
-
-For rank-one and rank-two networks, Dubreuil et al. 2022 - Population structure in computations through neural dynamics (Nature Neuroscience).pdf used the following reduced models. For the perceptual decision-making task (rank one),
-\[
-\begin{aligned}
+For rank-one and rank-two networks, \citet{dubreuil2022} used the following reduced models. For the perceptual decision-making task (rank one),
+\begin{align}
 \frac{d\kappa}{dt}
-&=-\kappa
-+\tilde{\sigma}_{nm}\kappa
-+\tilde{\sigma}_{nI}v(t),\\
+&=-\kappa+\tilde{\sigma}_{nm}\kappa
++\tilde{\sigma}_{nI}v(t), \notag\\
 z
 &=\tilde{\sigma}_{wm}\kappa
-+\tilde{\sigma}_{wI}v(t),\\
++\tilde{\sigma}_{wI}v(t), \notag\\
 \tilde{\sigma}_{ab}
-&=\sigma_{ab}\,\langle\Phi'\rangle(\Delta),\\
+&=\sigma_{ab}\,\langle\Phi'\rangle(\Delta), \notag\\
 \Delta
 &=\sqrt{\sigma_m^{2}\kappa^{2}+\sigma_I^{2}v^{2}}.
-\end{aligned}
-\]
+\end{align}
 For the parametric working-memory task (rank two), with only the diagonal recurrent covariances kept nonzero,
-\[
-\begin{aligned}
+\begin{align}
 \frac{d\kappa_1}{dt}
 &=-\kappa_1
 +\tilde{\sigma}_{n^{(1)}m^{(1)}}\kappa_1
-+\tilde{\sigma}_{n^{(1)}I}v(t),\\
++\tilde{\sigma}_{n^{(1)}I}v(t), \notag\\
 \frac{d\kappa_2}{dt}
 &=-\kappa_2
 +\tilde{\sigma}_{n^{(2)}m^{(2)}}\kappa_2
 +\tilde{\sigma}_{n^{(2)}I}v(t),
-\end{aligned}
-\]
-\[
+\end{align}
+\begin{equation}
 \Delta
 =\sqrt{
 \sigma_{m^{(1)}}^{2}\kappa_1^{2}
 +\sigma_{m^{(2)}}^{2}\kappa_2^{2}
 +\sigma_I^{2}v(t)^{2}
 }.
-\]
-
-\subsection{Linearized Dynamics and Eigenvalues}
-
-\begin{itemize}[leftmargin=*]
-  \item The eigenvalues of our linearized matrix / jacobian show a memory mode (eigenvalue 1) -- slow timescale, and a transient mode (small eigenvalue) fast timescale.
-\end{itemize}
+\end{equation}
 
 \subsection{Tasks}
 
-Our work focused on two different tasks: 1) perceptual decision making, and 2) parametric working memory.
+Our work focused on two different tasks: 1) perceptual decision-making and 2) parametric working-memory.
 
-For the perceptual decision making task, we created input trials by sampling the stimulus strength ($\bar{u}$) from a uniform distribution, then added Gaussian noise ($u(t)=\bar{u}+\xi(t)$). We trained an RNN with a linear readout to predict the dominant evidence (sign of $\bar{u}$) in a noisy signal as a binary decision (+1 or -1). The training objective was the mean squared error between the linear readout and the stimulus strength sign $sign(\bar{u})$.
+For the perceptual decision-making task, we created input trials by sampling the stimulus strength ($\bar{u}$) from a uniform distribution and then adding Gaussian noise ($u(t)=\bar{u}+\xi(t)$). We trained an RNN with a linear readout to predict the dominant evidence (the sign of $\bar{u}$) in a noisy signal as a binary decision (+1 or -1). The training objective was the mean-squared error between the linear readout and the stimulus-strength sign, $\operatorname{sign}(\bar{u})$.
 
-For the parametric working memory task, we uniformly sampled two values $f_1$ and $f_2$ in each trial, and presented these values one after the other with a delay. We trained the network to output the difference between the values. The network needed to learn to encode the earlier value $f_1$ in it's two dimensional latent space, retrieving during the readout to perform the subtraction. We found that training the network with a fixed delay did not reproduce the dynamics shown by Dubreuil et al. 2022 - Population structure in computations through neural dynamics (Nature Neuroscience).pdf. Instead, the network learned oscillatory dynamics in the latents overfitting to the fixed delay. We changed our training paradigm to use a curriculum learning approach with a variable delay and then reliably reproduced the line attractor dynamics shown in Dubreuil et al. 2022 - Population structure in computations through neural dynamics (Nature Neuroscience).pdf.
+For the parametric working-memory task, we uniformly sampled two values, $f_1$ and $f_2$, in each trial and presented them one after the other with a delay. We trained the network to output the difference between the values. The network needed to learn to encode the earlier value, $f_1$, in its two-dimensional latent space and retrieve it during the readout to perform the subtraction. We found that training the network with a fixed delay did not reproduce the dynamics shown by \citet{dubreuil2022}. Instead, the network learned oscillatory dynamics in the latents that overfit to the fixed delay.
+
+Concretely, $f_1,f_2$ are drawn uniformly from $\{10,\allowbreak 14,\allowbreak 18,\allowbreak 22,\allowbreak 26,\allowbreak 30,\allowbreak 34\}$ with $f_{\min}=10$, $f_{\max}=34$, mapped to centered inputs
+\begin{equation}
+u_i=\frac{1}{f_{\max}-f_{\min}}
+\left(f_i-\frac{f_{\max}+f_{\min}}{2}\right),
+\qquad i=1,2,
+\end{equation}
+and presented as two pulses
+\begin{equation}
+u(t)=\begin{cases}
+u_1 & 5\le t\le 10,\\
+u_2 & 60\le t\le 70,\\
+0 & \text{otherwise,}
+\end{cases}
+\qquad
+y=\frac{f_1-f_2}{f_{\max}-f_{\min}}.
+\end{equation}
 
 \subsection{Training}
 
-The networks we used were initialized with 128 neurons and trained over 1000 epochs. To isolate and interpret the recurrent dynamics, we only trained the left and right connectivity vectors $m$ and $n$, while leaving the other parameters fixed. All parameters were initialized from a standard normal distribution except for $w$ which we sampled with a standard deviation of 4, giving the readout enough range to reach the targets of +1 and -1. Training minimizes a mean-squared error on the readout, masked to the decision period at the end of each trial:
-\[
+All networks used $N=512$ neurons. The rank-one perceptual decision network was trained for 300 epochs; the rank-two working-memory network and its rank-one capacity control were each trained for 600 epochs. We used Adam with learning rate $5\times10^{-3}$ and batches of 32. To isolate and interpret the recurrent dynamics, we trained only the left and right connectivity vectors, $\mathbf{M}$ and $\mathbf{N}$, while keeping $\mathbf{I}$ and $\mathbf{w}$ fixed. All parameters were initialized from a standard normal distribution except for $\mathbf{w}$, which was sampled with standard deviation 4. Training minimized a mean-squared error on the readout, masked to the decision period at the end of each trial:
+\begin{equation}
 \mathcal{L}
 =\sum_{k,t}M_t\bigl(z_{k,t}-\hat{z}_{k,t}\bigr)^{2},
-\]
+\end{equation}
 where $k$ indexes trials, $t$ indexes timesteps, $z_{k,t}$ is the network readout, $\hat{z}_{k,t}$ is the target, and $M_t\in\{0,1\}$ is nonzero only on decision steps.
 
 \end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-training-input-output.pdf}
-  \captionof{figure}{\textit{Representative perceptual decision-making inputs and corresponding rank-one RNN outputs.}}
-\end{minipage}
-\end{center}
-
+\fullfigure[0.91]{rank1-training-input-output.pdf}{Representative perceptual decision-making inputs and corresponding rank-one RNN outputs.}{fig:training-input-output}
 \begin{multicols}{2}
-
 \section{Results}
 
-In this section, we discuss the computational results found when training rank-one and rank-two RNNs on the perceptual decision-making and parametric working tasks, and how to tie back to the analytical reduction above.
+In this section, we discuss the computational results obtained by training rank-one and rank-two RNNs on the perceptual decision-making and parametric working-memory tasks, and relate them to the analytical reduction above.
 
-\noindent\begin{minipage}{\columnwidth}
-\textbf{Training rank-one RNNs on the perceptual decision-making task} We first look at a rank-one RNN trained on a task to report the mean stimulus strength from noisy evidence (perceptual decision-making). We generated 200 training trials (256 test) where the stimulus strength $\bar{\mu}$ was applied during a fixed time interval. The network was trained to predict the stimulus strength in the last N=15 decision steps of it's output. For this task the recurrent connectivity is constrained to rank one,
-\[
-\begin{aligned}
+\subsection{A rank-one RNN accumulates evidence toward fixed-point attractors through the statistics of its loading space}
+
+\textbf{Training rank-one RNNs on the perceptual decision-making task.} We first look at a rank-one RNN trained to report the sign of the mean stimulus strength from noisy evidence. We generated 200 training trials and 256 test trials, in which the stimulus strength $\bar{\mu}$ was applied during a fixed time interval. The network was trained to predict the sign of the stimulus strength during the final 15 decision steps of its output. For this task, the recurrent connectivity is constrained to rank one:
+\begin{align}
 \tau\frac{d\mathbf{x}}{dt}
 &=-\mathbf{x}
 +\frac{1}{N}\mathbf{m}\mathbf{n}^{\top}\phi(\mathbf{x})
-+\mathbf{I}u(t),\\
-\phi(\mathbf{x})&=\tanh(\mathbf{x}),
-\qquad
++\mathbf{I}u(t), \notag\\
+\phi(\mathbf{x})&=\tanh(\mathbf{x}), \qquad
 z(t)=\frac{1}{N}\mathbf{w}^{\top}\phi(\mathbf{x}).
-\end{aligned}
-\]
-\end{minipage}
+\end{align}
 
 \end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=0.82\textwidth]{rank1-decision-task-trials.pdf}
-  \captionof{figure}{\textit{Four representative trials with strong and weak stimulus strength. Blue represents The stimulus was applied in a subset of the trial, while the network had to predict the stimulus strength in a later time window (the decision window).}}
-\end{minipage}
-\end{center}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-training-summary.pdf}
-  \captionof{figure}{\textit{The mean-squared error converged in under 50 epochs, producing a network that could solve the task with 100\% accuracy}}
-\end{minipage}
-\end{center}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-input-output-examples.pdf}
-  \captionof{figure}{\textit{Model outputs (right) for corresponding inputs (left). The model chooses a direction and sticks with it.}}
-\end{minipage}
-\end{center}
-
+\fullfigure[0.76]{rank1-decision-task-trials.pdf}{Four representative trials with strong and weak stimulus strengths. The stimulus was applied during one part of the trial, while the network had to predict its sign during a later decision window.}{fig:rank1-task}
+\fullfigure[0.90]{rank1-training-summary.pdf}{The mean-squared error converged in under 50 epochs, producing a network that could solve the task with 100\% accuracy.}{fig:rank1-training}
+\fullfigure[0.90]{rank1-input-output-examples.pdf}{Model outputs (right) for corresponding inputs (left). The model chooses a direction and sticks with it.}{fig:rank1-outputs}
 \begin{multicols}{2}
+\textbf{Interpreting the latent trajectories.} With a rank-one RNN that successfully performs this decision-making task, we now ask how it does so. Earlier, we showed that the population's trajectory lies entirely in the subspace spanned by the left connectivity vector, $m$, and the input mixing vector, $I$. By projecting the population activity onto an orthogonalized basis that spans this subspace, we observe that the latent trajectories accumulate evidence and then quickly collapse to a decision along either the positive or negative direction of $m$, depending on the stimulus sign.
 
-\textbf{Interpreting the latent trajectories}. With a rank one RNN that successfully performs this decision making task, we now ask how? Earlier, we showed that the population's trajectory lies entirely on the subspace spanned by the left connectivity vector, $m$ and the input mixing vector, $I$. By projecting the population activity onto an orthogonalized basis that spans this subspace, we observe that the latent trajectories are accumulating evidence and then quickly collapse to a decision along either the positive or negative direction of $m$ depending on the stimulus sign.
+Since the population trajectories lie in a two-dimensional subspace, we used PCA to find the directions of maximum variance and confirmed empirically that most of the variance in the data was explained by the first two components. Projecting the trajectories onto the subspace spanned by these two directions produced a latent-trajectory plot similar to the one above.
 
 \end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=0.68\textwidth]{rank1-latent-trajectories.pdf}
-  \captionof{figure}{\textit{Test trial population activity, $\mathbf{x}(t)=\mathbf{M}\boldsymbol{\kappa}(t)+\mathbf{I}_{\perp}v(t)$, projected onto $span(M, I_{\perp}$) and graded by trial stimulus strength $\bar{\mu}$ shows excursions from the origin to points on the positive and negative m-axis depending on the sign of the stimulus strength. The network seems to be accumulating signed evidence in latent space, and then collapses to one of the two non-origin fixed points.}}
-\end{minipage}
-\end{center}
-
+\fullfigure[0.58]{rank1-latent-trajectories.pdf}{Test-trial population activity projected onto an orthonormal basis spanning $\operatorname{span}(\mathbf{M},\mathbf{I})$. Trajectories are colored by signed stimulus strength $\bar{\mu}$ and move toward the positive or negative recurrent axis according to the target sign. The orthogonalized input axis is used only for visualization; the dynamical decomposition remains $\mathbf{x}=\mathbf{M}\boldsymbol{\kappa}+\mathbf{I}v$.}{fig:rank1-latent}
+\fullfigure[0.90]{rank1-pca-summary.pdf}{The first two principal components of the population activity across all trials and time points (right). Projecting activity onto these components reproduces the trajectory found in the basis of $m$ and $I$, though rotated.}{fig:rank1-pca}
 \begin{multicols}{2}
-
-Since the population trajectories lies on a two dimensional subspace, we used PCA on the trajectories to find the directions of maximum variance, and confirmed empircally that most of the variance in the data was explained by the first two components. Projecting the trajectories onto a subspace spanned by these two directions produced a latent trajectory plot similar to what we found above.
+\textbf{Covariance between connectivity parameters in loading space.} From the previous result, we found an interpretable trajectory in latent space for the perceptual decision-making task. The network accumulates evidence in latent space and then collapses to one of two directions along $m$. Now, we ask how the population as a whole achieves this trajectory. To do this, we rely on the insight from the mean-field analysis described above. We saw that the second-order moments of the loading space (under the assumption that the parameters are jointly Gaussian) carry the dynamics of the latent. First, we look at the second-order moments of the loading space. \textbf{TODO:} How do we interpret these numbers?
 
 \end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-pca-summary.pdf}
-  \captionof{figure}{\textit{The first two principal components of the population activity across all trials and time points (right). Projected activity onto the first two principal components reproduces a familiar trajectory to what we found in the basis of $m, I$, though rotated.}}
-\end{minipage}
-\end{center}
-
+\fullfigure[0.94]{rank1-loading-space-covariance.pdf}{Pairwise loading-space point clouds and the covariance heatmap for the current $N=512$ rank-one run. The three task-relevant population covariances are approximately $(\sigma_{nI},\sigma_{mn},\sigma_{mw})=(0.556,1.586,2.222)$.}{fig:rank1-covariance}
 \begin{multicols}{2}
-
-\par\medskip
-\noindent{\color{rulegray}\rule{\columnwidth}{0.4pt}}
-\medskip
-
-\textbf{Covariance between connectivity parameters in loading space.} From the previous result we found an interpretable trajectory in latent space for the perceptual decision making task. The network accumulates evidence in latent space and then collapses to one of two directions along $m$. Now, we ask how the population as a whole achieves this trajectory. To do this, we rely on the insight from the mean field analysis described above. We saw that the second order moments of the loading space (under the assumption that the parameters are jointly Gaussian) carry the dynamics of the latent. First, we look at the second-order moments of the loading space. \textbf{TODO}: How do we interpret these numbers?
+\textbf{Resampling from the distribution.} Next, we show computationally that the distribution of the loading space is sufficient to solve the perceptual decision-making task. We fit a four-dimensional Gaussian distribution to the point cloud of the trained network's connectivity vectors. From this, we reconstruct ten new networks with the same number of neurons as the original network. We test the performance of the sampled networks on the test set and find that they achieve comparable accuracy in predicting the sign of the stimulus strength.
 
 \end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-loading-space-covariance.pdf}
-  \captionof{figure}{\textit{Plots of the upper triangular covariances of loading parameters. On the left we show the point cloud, and on the right the heatmap. For this particular network run, we found only positive covariances, though in other network runs we had other combinations still resulting in the same predictions}}
-\end{minipage}
-\end{center}
-
+\fullfigure[0.90]{rank1-gaussian-loading-samples.pdf}{On the left, we show the distribution of connectivity vectors for a single network. On the right is the covariance heatmap.}{fig:rank1-gaussian-loading}
+\fullfigure[0.52]{rank1-gaussian-network-accuracy.pdf}{The Gaussian-sampled networks achieve 100\% accuracy on the perceptual decision-making task, showing that the loading-space distribution endows the network with the computation necessary to perform the task.}{fig:rank1-gaussian-accuracy}
 \begin{multicols}{2}
-
-\textbf{Re-sampling from the distribution}. Next, we show computationally that the distribution of the loading space is sufficient to solve the perceptual decision making task. We fit a four dimensional Gaussian distribution to the point cloud of the trained network's connectivity vectors. From this, we re-construct ten new networks with the same number of neurons as the original network. We test the performance of the sampled networks on the test set and find that they achieve comparable accuracy on predicting the sign of the stimulus strength.
-
-\end{multicols}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{rank1-gaussian-loading-samples.pdf}
-  \captionof{figure}{\textit{On the left, we show the distribution of connectivity vectors for a single network. On the right is the covariance heatmap.}}
-\end{minipage}
-\end{center}
-
-\begin{center}
-\begin{minipage}{\textwidth}
-  \centering
-  \includegraphics[width=0.68\textwidth]{rank1-gaussian-network-accuracy.pdf}
-  \captionof{figure}{\textit{The Gaussian sampled networks achieve 100\% accuracy on the perceptual decision making task, showing that the loading space distribution endows the network with the necessary computation to perform the task}}
-\end{minipage}
-\end{center}
-
-\begin{multicols}{2}
-
-\textbf{Equivalent circuit}. As discussed above in the methods section, a mean-field analysis of the population dynamics allows us to describe the latent variable $\kappa$'s dynamics in terms of the covariances of the loading parameters and the average gain of the population.
-\[
+\textbf{Equivalent circuit.} As discussed above in the Methods section, a mean-field analysis of the population dynamics allows us to describe the dynamics of the latent variable $\kappa$ in terms of the covariances of the loading parameters and the average gain of the population.
+\begin{align}
 \tau\dot{\kappa}
-=-\kappa
-+\tilde{\sigma}_{nm}\kappa
-+\tilde{\sigma}_{nI_{\perp}}v
-=-\bigl(1-\tilde{\sigma}_{nm}\bigr)\kappa
-+\tilde{\sigma}_{nI_{\perp}}v,
-\qquad
+&=-\kappa+\tilde{\sigma}_{nm}\kappa
++\tilde{\sigma}_{nI}v \notag\\
+&=-\bigl(1-\tilde{\sigma}_{nm}\bigr)\kappa
++\tilde{\sigma}_{nI}v, \notag\\
 z
-=\tilde{\sigma}_{wm}\kappa,
-\]
-The recurrent overlap sets an effective timescale $\tau_{\mathrm{eff}}=\tau/(1-\tilde{\sigma}_{nm})$: as $\tilde{\sigma}_{nm}\to 1$, integration slows and $\kappa$ acts as a perfect integrator of the input. Since $\mathbf{w}\perp\mathbf{I}$ by construction, $\sigma_{wI_{\perp}}=0$ and the readout depends only on the overlap of $\mathbf{w}$ with $\mathbf{m}$.
-\[
+&=\tilde{\sigma}_{wm}\kappa+\tilde{\sigma}_{wI}v
+\approx\tilde{\sigma}_{wm}\kappa,
+\end{align}
+The recurrent overlap sets an effective timescale $\tau_{\mathrm{eff}}=\tau/(1-\tilde{\sigma}_{nm})$: as $\tilde{\sigma}_{nm}\to 1$, integration slows and $\kappa$ acts as a perfect integrator of the input. The vectors $\mathbf{w}$ and $\mathbf{I}$ are sampled independently from zero-mean distributions, so their overlap is zero in expectation, $\mathbb{E}[\sigma_{wI}]=0$, and only approximately zero in a finite network. The approximation above neglects this small term; the implemented full-covariance circuit retains its empirical value.
+\begin{equation}
 \tilde{\sigma}_{ab}=\sigma_{ab}\,\langle\Phi'\rangle(\Delta),
 \qquad
-\Delta=\sqrt{\sigma_m^{2}\kappa^{2}+\sigma_{I_{\perp}}^{2}v^{2}},
-\]
-\[
+\Delta=\sqrt{\sigma_m^{2}\kappa^{2}+\sigma_I^{2}v^{2}},
+\end{equation}
+\begin{equation}
 \langle\Phi'\rangle(\Delta)
 =\frac{1}{\sqrt{2\pi}}
 \int_{-\infty}^{+\infty}
 dz\,e^{-z^{2}/2}\,\phi'(\Delta z).
-\]
-The alignment of the latent and recurrent connectivity vectors, $\tilde{\sigma}_{nm}$, changes the timescale of the dynamics, while the alignment of the input and latent vectors, $\tilde{\sigma}_{nI_{\perp}}$, influences the direction of the driving force of the latent variable $\kappa$. $\tilde{\sigma}_{wm}$ gives the network the direction of readout.
+\end{equation}
+The alignment of the latent and recurrent connectivity vectors, $\tilde{\sigma}_{nm}$, changes the timescale of the dynamics, while the alignment of the input and latent vectors, $\tilde{\sigma}_{nI}$, influences the direction of the driving force on the latent variable $\kappa$. $\tilde{\sigma}_{wm}$ determines the network's readout direction. The gain is what makes this a nonlinear system.
 
-We now simulate this one dimensional dynamical system along with the low-pass filtered inputs $\dot{v} = -v + u$, using the covariance parameters of our trained network.
-
-\subsection{Rank-two RNN on a parametric working memory task illustrates oscillatory dynamics in latent space. Using curiculum learning with a variable delay produced line attractor dynamics}
-
-"For instance we observed that training on the parametric-working memory task with fixed delays between the two stimuli, while they are drawn randomly here, leads to solutions that exploit network oscillations rather than a line attractor" - Dubreuil et al. 2020 - Complementary roles of dimensionality and population structure in neural computations (bioRxiv).pdf
-
-\begin{itemize}[leftmargin=*]
-  \item The paper finds that the latent $\kappa_1$ falls on a line attractor that continuously determines $f_1$.
-\end{itemize}
-
-\textbf{Speak about the eigenvalues}
-
-\textbf{Speak about the Jacobian / dynamics}
-
-\subsection{Rank-two RNN on a parametric working memory task illustrates cross-covariances in the non-diagonal terms leading to poor accuracy}
-
-% ---------------------------------------------------------------------------
-\section{Discussion}
+We simulate this one-dimensional dynamical system along with the low-pass-filtered inputs, $\tau\dot{v} = -v + u$, using the covariance parameters of our trained network. We find that this equivalent circuit performs as well as the original high-dimensional RNN and produces very similar latent trajectories.
 
 \end{multicols}
+\fullfigure[0.58]{rank1-reduced-trajectories.pdf}{Latent trajectories of the one-dimensional equivalent circuit split by mean stimulus strength.}{fig:rank1-reduced-trajectories}
+\fullfigure[0.94]{rank1-reduced-summary.pdf}{Accuracy between trained RNN and 1D system (left), and representative trajectories (right).}{fig:rank1-reduced-summary}
+\begin{multicols}{2}
+\textbf{Fixed-point analysis.} The final step in our analysis of rank-one networks on the perceptual decision-making task is to find the fixed points of the reduced dynamics and reason about their stability. Writing the autonomous flow as $\dot{\kappa}=F(\kappa)$, we follow \citet{sussillo2013} and minimize the auxiliary energy
+\begin{equation}
+q(\kappa)=\frac{1}{2}\bigl|F(\kappa)\bigr|^{2}.
+\end{equation}
+Zeros of $q$ are fixed points ($F(\kappa^{*})=0$). Linearizing around each fixed point, $\delta\dot{\kappa}=F'(\kappa^{*})\,\delta\kappa$, allows us to determine stability by looking at the sign of the eigenvalues of the Jacobian (in the 1D case, $F'(\kappa^{*})$).
 
+We find two stable fixed points on either side of the origin, with the origin acting as an unstable fixed point. This clearly showcases the behavior seen in the latent trajectories: early evidence pushes the system toward the attractor points. For the system to integrate inputs instead of just reporting the sign, we would expect a line attractor to emerge, as the network would need to settle on a continuum of points. This is what we should expect from the parametric working-memory task.
+
+\end{multicols}
+\fullfigure[0.58]{rank1-fixed-points.pdf}{Energy function with the corresponding minima. Stability is determined using the sign of $F'(\kappa)$.}{fig:rank1-fixed-points}
+\begin{multicols}{2}
+\subsection{A rank-two RNN on a parametric working-memory task illustrates oscillatory dynamics in latent space; curriculum learning with a variable delay produces line-attractor dynamics}
+
+Now, we turn our attention to rank-two RNNs on a task that requires the network to predict a continuum of values. In the working-memory task, two stimuli, $f_1$ and $f_2$, are presented one after the other with a delay. The network is trained to report the normalized difference between the two. To solve this task, it must be able to retain the value of $f_1$. We trained a rank-two RNN with a fixed delay of 50 time steps between the two stimuli. Contrary to the results reported by \citet{dubreuil2022}, this network developed oscillatory dynamics instead of maintaining the persistent trace they observed. We hypothesize that their variable-delay approach trains the model to maintain a memory of the stimulus in the latents rather than exploit the timing to achieve a correct readout, as in our oscillating network.
+
+\textbf{Training a rank-two network on the parametric working-memory task.} For this task, we initialized a rank-two network and trained it using the mean-squared error to output the normalized difference between the two input stimuli, $y=\frac{f_1 - f_2}{f_{\max} - f_{\min}}$, where $f_{\max}$ and $f_{\min}$ were the extrema of the distribution from which we sampled the stimuli.
+\begin{align}
+\tau\frac{d\mathbf{x}}{dt}
+&=-\mathbf{x}
++\frac{1}{N}\Bigl(
+\mathbf{m}^{(1)}\bigl(\mathbf{n}^{(1)}\bigr)^{\top}
++\mathbf{m}^{(2)}\bigl(\mathbf{n}^{(2)}\bigr)^{\top}
+\Bigr)\phi(\mathbf{x}) \notag\\
+&\quad+\mathbf{I}u(t), \notag\\
+\phi(\mathbf{x})&=\tanh(\mathbf{x}), \qquad
+z(t)=\frac{1}{N}\mathbf{w}^{\top}\phi(\mathbf{x}).
+\end{align}
+The network had two recurrent degrees of freedom to use to solve the task. Population activity lives in the subspace spanned by $\mathbf{m}^{(1)}$, $\mathbf{m}^{(2)}$, and the raw input vector $\mathbf{I}$, so we can write
+\begin{equation}
+\mathbf{x}(t)=\mathbf{m}^{(1)}\kappa_1(t)
++\mathbf{m}^{(2)}\kappa_2(t)+\mathbf{I}v(t),
+\end{equation}
+with latent coordinates $\kappa_1,\kappa_2$ and input coordinate $v$ obeying
+\begin{align}
+\tau\dot{\kappa}_1&=-\kappa_1+\hat{\kappa}_1, \notag\\
+\tau\dot{\kappa}_2&=-\kappa_2+\hat{\kappa}_2, \notag\\
+\tau\dot{v}&=-v+u(t),
+\end{align}
+\begin{equation}
+\begin{split}
+\hat{\kappa}_r={}&\frac{1}{N}\bigl(\mathbf{n}^{(r)}\bigr)^{\top}
+\phi\!\bigl(\mathbf{m}^{(1)}\kappa_1
++\mathbf{m}^{(2)}\kappa_2+\mathbf{I}v\bigr),\\
+&r=1,2.
+\end{split}
+\end{equation}
+
+\end{multicols}
+\fullfigure[0.76]{rank2-memory-behavior.pdf}{A rank-two network learned to perform the task, but a rank-one network could not (right). With only one degree of freedom, the rank-one network has no room to store a memory of the first stimulus for use at a later time point. On the left, we show the target values the model needed to learn for the corresponding inputs.}{fig:rank2-behavior}
+\fullfigure[0.88]{rank2-memory-trials.pdf}{Representative inputs and model outputs across a range of values.}{fig:rank2-trials}
+\begin{multicols}{2}
+\textbf{Interpreting the latent trajectories.} Now, we unpack the underlying computation that the rank-two RNN performs by studying what the latent coordinates are doing in the low-rank subspace. We isolate the effect of each stimulus on the latents by zeroing out the other. We expected the network to maintain a persistent memory of one stimulus in a latent, such that a linear readout could determine the difference between the two stimuli. This is what \citet{dubreuil2022} found. However, we found that the latents settle into coupled, oscillating dynamics. Later, we show that the network overfit to the fixed delay between the stimuli and relied on the timing of the oscillations to solve the task.
+
+\end{multicols}
+\fullfigure[0.76]{rank2-latent-sweeps.pdf}{The isolated effects of each stimulus on the latents, found by holding $f_i = 22\,\mathrm{Hz}$ (resulting in a mean-adjusted zero stimulus). Once a stimulus is presented, both latents begin a coupled rotating trajectory. On the left, we set $f_2 = 22\,\mathrm{Hz}$; on the right, we set $f_1 = 22\,\mathrm{Hz}$.}{fig:rank2-latent-sweeps}
+\fullfigure[0.52]{rank2-latent-plane.pdf}{Oscillating trajectory of the combined latents, holding $f_2 = 22\,\mathrm{Hz}$ while sweeping $f_1$.}{fig:rank2-latent-plane}
+\begin{multicols}{2}
+\textbf{Covariance between connectivity parameters in loading space.} Now, we turn to the second-order structure of the loading-space distribution to see how the population as a whole supports these dynamics. The trained network develops strong positive recurrent covariances within each latent mode ($\sigma_{n_1,m_1}$, $\sigma_{n_2,m_2}$), together with cross-latent covariances ($\sigma_{n_1,m_2}$, $\sigma_{n_2,m_1}$) that couple the two latents to support the rotational dynamics. The strong covariance between $m_1$ and $w$ aligns this latent activity with the readout.
+
+\end{multicols}
+\fullfigure[0.58]{rank2-loading-covariance.pdf}{Upper-triangular covariance matrix of the six-dimensional loading space $(I,n_1,n_2,m_1,m_2,w)$. Positive within-mode covariances slow the latent dynamics, while opposite-signed cross-mode covariances generate the observed oscillatory dynamics.}{fig:rank2-covariance}
+\begin{multicols}{2}
+\textbf{Resampling from the distribution.} Now, we check whether the loading space distribution itself is sufficient to perform the necessary computation of the parametric working memory task. We fit a six-dimensional Gaussian to the loading vectors and sample ten rank-two networks each with N=512 neurons. Unlike the rank-one network, these sampled networks do not retain the performance of the original network. Their median MSE is 0.0839, with only one network meeting the target of MSE $< 0.005$.
+
+\end{multicols}
+\fullfigure[0.78]{rank2-gaussian-pipeline.pdf}{Performance of the trained RNN, the full-covariance equivalent circuit, and ten Gaussian-sampled RNNs. The source network obtains MSE $0.000373$, whereas the finite samples have median MSE $0.0839$ and vary widely in performance.}{fig:rank2-gaussian}
+\begin{multicols}{2}
+\textbf{Overfit performance}. From the observation that our trained network relies on the oscillatory timescale to solve the task, we hypothesized that the network would only perform when the delay between the stimuli was tuned to a fixed period. We thus varied the delay between the stimuli and tested the network's performance (MSE) across a large range of delays. We found that the network's performance oscillates with the delay - a clear signal that the network is overfit to the delay between the stimuli.
+
+\end{multicols}
+\fullfigure[0.72]{rank2-delay-generalization.pdf}{Mean-squared error of the network with stimuli separated by a varying delay. Task performance oscillates with the delay, showing a clear phase preference}{fig:rank2-delay-generalization}
+\begin{multicols}{2}
+\textbf{Equivalent circuit.} As our training procedure didn't produce a network with the dynamics reported by \citet{dubreuil2022}, we next asked how a network with no cross-mode covariances solves the task. We used the covariances they reported and constructed the equivalent circuit with only the self-feedback covariance terms.
+\begin{align}
+\tau\dot{\kappa}_1
+&=-\kappa_1
++\tilde{\sigma}_{n^{(1)}m^{(1)}}\kappa_1
++\tilde{\sigma}_{n^{(1)}I}v, \notag\\
+\tau\dot{\kappa}_2
+&=-\kappa_2
++\tilde{\sigma}_{n^{(2)}m^{(2)}}\kappa_2
++\tilde{\sigma}_{n^{(2)}I}v.
+\end{align}
+For our implementation of their circuit \citep{dubreuil2022}, we used
+\begin{equation}
+\begin{aligned}
+\sigma_{n^{(1)}m^{(1)}}&=1, &
+\sigma_{n^{(2)}m^{(2)}}&=0.5,\\
+\sigma_{n^{(1)}I}&=0.5, &
+\sigma_{n^{(2)}I}&=1.9.
+\end{aligned}
+\end{equation}
+Here, $\sigma_{m^{(r)}}^2$ and $\sigma_I^2$ are the variances of the corresponding loading-space coordinates. Thus, $\Delta$ varies with the current latent state $(\kappa_1,\kappa_2)$ and input coordinate $v$.
+The intrinsic timescale of each latent is influenced by the covariance in the following way:
+\begin{equation}
+\tau_{\mathrm{eff},r}(\Delta)
+=\frac{\tau}{1-\tilde{\sigma}_{n^{(r)}m^{(r)}}}
+=\frac{\tau}{1-\sigma_{n^{(r)}m^{(r)}}\langle\Phi'\rangle(\Delta)},
+\qquad r=1,2.
+\end{equation}
+Ignoring gain, the first recurrent covariance ($\sigma_{n^{(1)}m^{(1)}}=1$) produces a perfect integrator as the dynamics settle towards the line attractor determined by the input, while the second still retains the leak at a timescale of $\tau_{\mathrm{eff},2}=2\tau$. With gain, these values are modulated.
+
+\end{multicols}
+\fullfigure[0.76]{rank2-paper-latent-sweeps.pdf}{Trajectories of each latent under isolated stimuli (i.e zeroing out the effect of one via $f_i = 22Hz$). One latent reflects a persistent memory, while the other is a transient deflection. Together, a linear readout is able to solve the task.}{fig:rank2-paper-latent-sweeps}
+\begin{multicols}{2}
+\textbf{Comparing performance}. Such a network with a persistent and transient deflection is robust to a varying delay. Below, we conduct a similar analysis to what we did with the oscillating network, but show that under arbitrary delay the persistent-transient network maintains consistent performance. Though, the equivalent circuit doesn't perform as well as the original trained RNN.
+
+\end{multicols}
+\fullfigure[0.58]{rank2-paper-delay-generalization.pdf}{Persistent-transient equivalent circuit shows consistent performance across delays}{fig:rank2-paper-delay-generalization}
+\fullfigure[0.58]{rank2-circuit-performance-comparison.pdf}{Equivalent circuit constructed from our original RNN's covariances and the covariances reported by \citet{dubreuil2022} do not achieve target performance (MSE $< 0.005$)}{fig:rank2-circuit-performance}
+\begin{multicols}{2}
+
+\section{Discussion}
+
+This work used low-rank recurrent neural networks to interpret the computations performed by populations of recurrently connected neurons. We studied the low-dimensional latent dynamics and connected them to the statistics of the network's connectivity parameters. We then tested whether these population-level statistics were sufficient to reproduce the learned computations by constructing reduced circuits and sampling new networks from fitted loading-space distributions. This approach succeeded for the perceptual decision-making network but was less reliable for the more dynamically sensitive working-memory solution.
+
+In the perceptual decision-making task, the rank-one network developed a one-dimensional decision variable with two stable fixed points. The mean-field analysis by \citet{dubreuil2022} helped us see how the covariances of the loading space could work to perform this computation: $\sigma_{nI}$ brings the sensory evidence into the latent dynamics, $\sigma_{nm}$ reinforces the evidence through positive feedback, and $\sigma_{mw}$ aligns the latent variable with the output. The success of the Gaussian resampling approach showed us that the population-level statistics were sufficient to capture the core computational needs of the task.
+
+In the working-memory task, our rank-two network learned oscillatory dynamics in the latent space. The fixed delay between stimuli in the task setup allowed the network to find a solution that overfit to this delay period, but that did not generalize to other delays as the solution in \citet{dubreuil2022} did. A future analysis could look into eigenvalues of the linearized Jacobian to quantify the oscillatory dynamics, their stability and timescales. Using the loading-space covariances reported by \citet{dubreuil2022}, we found that a more robust solution would learn a line attractor in one of the latents where the latent could maintain a persistent memory of the first stimulus, while leveraging the second latent as a transient, deflection in activity to perform the difference computation. We hypothesize that a more robust training procedure (ex. by varying delays) could encourage the network to learn this more robust solution.
+
+(Final conclusion sententce)
+
+\subsection*{Future directions}
+
+\begin{itemize}
+\item Analysis of the timescales of the oscillations
+\item Analysis of why training leads to this solution
+\item Regularization for encouraging the model to learn more robust solutions (curiculum and varying delay)
+\item Fixed point / linearization analysis
+\end{itemize}
+
+\begin{thebibliography}{2}
+\footnotesize
+
+\bibitem[Dubreuil et al.(2022)]{dubreuil2022}
+Dubreuil, A., Valente, A., Beiran, M., Mastrogiuseppe, F., \& Ostojic, S. (2022).
+The role of population structure in computations through neural dynamics.
+\emph{Nature Neuroscience}, \emph{25}, 783--794.
+\url{https://doi.org/10.1038/s41593-022-01088-4}.
+
+\bibitem[Sussillo and Barak(2013)]{sussillo2013}
+Sussillo, D., \& Barak, O. (2013).
+Opening the black box: Low-dimensional dynamics in high-dimensional recurrent neural networks.
+\emph{Neural Computation}, \emph{25}(3), 626--649.
+\url{https://doi.org/10.1162/NECO_a_00409}.
+
+\end{thebibliography}
+
+\end{multicols}
 \end{document}

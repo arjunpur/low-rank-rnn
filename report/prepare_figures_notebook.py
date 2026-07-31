@@ -7,43 +7,7 @@ import sys
 from pathlib import Path
 
 
-PANEL_EXPORT_HELPER = """\
-def save_report_figure(figure: plt.Figure, filename: str) -> Path:
-    \"\"\"Label data panels and save a vector PDF for the LaTeX report.\"\"\"
-    if filename in {
-        "rank1-input-output-examples.pdf",
-        "rank1-training-input-output.pdf",
-    }:
-        figure.subplots_adjust(top=0.88)
-
-    data_axes = [
-        axis
-        for axis in figure.axes
-        if axis.get_visible() and axis.get_label() != "<colorbar>"
-    ]
-    if len(data_axes) > 1:
-        panel_label_size = max(12, 1.1 * figure.get_figwidth())
-        for index, axis in enumerate(data_axes):
-            panel_label = axis.annotate(
-                f"({chr(ord('a') + index)})",
-                xy=(0, 1),
-                xycoords="axes fraction",
-                xytext=(-8, 2),
-                textcoords="offset points",
-                ha="right",
-                va="bottom",
-                fontsize=panel_label_size,
-                fontweight="bold",
-                annotation_clip=False,
-            )
-            panel_label.set_clip_on(False)
-
-    REPORT_FIGURE_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    output_path = REPORT_FIGURE_DIRECTORY / filename
-    with plt.rc_context({"savefig.bbox": None}):
-        figure.savefig(output_path, format="pdf")
-    return output_path
-"""
+REPORT_EXPORT_ALIAS = "save_report_figure = plotting.save_report_figure\n"
 
 GAUSSIAN_ASSIGNMENT = """\
 (
@@ -66,6 +30,74 @@ save_report_figure(
 )
 """
 
+TRAINING_INPUT_OUTPUT_EXPORT = """\
+rank1_training_examples = np.concatenate((positive_examples, negative_examples))
+rank1_training_input_output_figure, _ = plotting.plot_trial_outputs(
+    rank1_test_inputs[rank1_training_examples],
+    rank1_test_labels[rank1_training_examples],
+    rank1_outputs[rank1_training_examples],
+    decision_steps=RANK1_DECISION_STEPS,
+)
+save_report_figure(
+    rank1_training_input_output_figure,
+    "rank1-training-input-output.pdf",
+)
+plt.close(rank1_training_input_output_figure)
+"""
+
+PLOT_EXPORTS = (
+    (
+        "plotting.plot_reduced_system_trajectories(\n",
+        "rank1_reduced_trajectories_figure",
+        "rank1-reduced-trajectories.pdf",
+    ),
+    (
+        "plotting.plot_fixed_points(\n",
+        "rank1_fixed_points_figure",
+        "rank1-fixed-points.pdf",
+    ),
+    (
+        "plotting.plot_memory_trials(\n",
+        "rank2_memory_trials_figure",
+        "rank2-memory-trials.pdf",
+    ),
+    (
+        "plotting.plot_memory_behavior(\n",
+        "rank2_memory_behavior_figure",
+        "rank2-memory-behavior.pdf",
+    ),
+    (
+        "plotting.plot_latent_sweeps(\n",
+        "rank2_latent_sweeps_figure",
+        "rank2-latent-sweeps.pdf",
+    ),
+    (
+        "plotting.plot_latent_plane(\n",
+        "rank2_latent_plane_figure",
+        "rank2-latent-plane.pdf",
+    ),
+    (
+        "plotting.plot_delay_mse(\n",
+        "rank2_delay_generalization_figure",
+        "rank2-delay-generalization.pdf",
+    ),
+    (
+        "plotting.plot_connectivity_covariance(\n",
+        "rank2_loading_covariance_figure",
+        "rank2-loading-covariance.pdf",
+    ),
+    (
+        "plotting.plot_mse_comparison(\n",
+        "rank2_gaussian_resampling_figure",
+        "rank2-gaussian-pipeline.pdf",
+    ),
+    (
+        "plotting.plot_circuit_mse_comparison(\n",
+        "rank2_circuit_performance_figure",
+        "rank2-circuit-performance-comparison.pdf",
+    ),
+)
+
 
 def code_cell(source: str, cell_id: str) -> dict[str, object]:
     return {
@@ -78,9 +110,72 @@ def code_cell(source: str, cell_id: str) -> dict[str, object]:
     }
 
 
+def assign_and_export_plot(
+    notebook: dict[str, object],
+    call_prefix: str,
+    variable_name: str,
+    filename: str,
+    *,
+    occurrence: int = 0,
+) -> None:
+    """Assign one plotting call and export its returned notebook figure."""
+    plot_cells = [
+        cell
+        for cell in notebook["cells"]
+        if call_prefix in "".join(cell.get("source", []))
+    ]
+    plot_cell = plot_cells[occurrence]
+    source = "".join(plot_cell["source"])
+    call_index = source.index(call_prefix)
+    source = (
+        source[:call_index]
+        + f"{variable_name}, _ = "
+        + source[call_index:]
+    )
+    show_index = source.index("plt.show()", call_index)
+    export = (
+        f'save_report_figure(\n'
+        f"    {variable_name},\n"
+        f'    "{filename}",\n'
+        f")\n"
+    )
+    source = source[:show_index] + export + source[show_index:]
+    plot_cell["source"] = source.splitlines(keepends=True)
+
+
+def export_existing_figure(
+    notebook: dict[str, object],
+    marker: str,
+    variable_name: str,
+    filename: str,
+) -> None:
+    """Export a figure that the notebook already stores in a variable."""
+    plot_cell = next(
+        cell
+        for cell in notebook["cells"]
+        if marker in "".join(cell.get("source", []))
+    )
+    source = "".join(plot_cell["source"])
+    marker_index = source.index(marker)
+    show_index = source.index("plt.show()", marker_index)
+    export = (
+        f'save_report_figure(\n'
+        f"    {variable_name},\n"
+        f'    "{filename}",\n'
+        f")\n"
+    )
+    source = source[:show_index] + export + source[show_index:]
+    plot_cell["source"] = source.splitlines(keepends=True)
+
+
 def prepare_notebook(source_path: Path, output_path: Path) -> None:
     notebook = json.loads(source_path.read_text())
     repository_directory = source_path.resolve().parent
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            cell["execution_count"] = None
+            cell["outputs"] = []
 
     first_code_index = next(
         index
@@ -99,11 +194,24 @@ def prepare_notebook(source_path: Path, output_path: Path) -> None:
     setup_index = next(
         index
         for index, cell in enumerate(notebook["cells"])
-        if "def save_report_figure" in "".join(cell.get("source", []))
+        if "plotting.set_plot_style()" in "".join(cell.get("source", []))
     )
     notebook["cells"].insert(
         setup_index + 1,
-        code_cell(PANEL_EXPORT_HELPER, "report-panel-export"),
+        code_cell(REPORT_EXPORT_ALIAS, "report-export-alias"),
+    )
+
+    trial_plot_index = next(
+        index
+        for index, cell in enumerate(notebook["cells"])
+        if "rank1_examples =" in "".join(cell.get("source", []))
+    )
+    notebook["cells"].insert(
+        trial_plot_index + 1,
+        code_cell(
+            TRAINING_INPUT_OUTPUT_EXPORT,
+            "report-training-input-output",
+        ),
     )
 
     gaussian_cell = next(
@@ -125,6 +233,34 @@ def prepare_notebook(source_path: Path, output_path: Path) -> None:
             1,
         )
         gaussian_cell["source"] = gaussian_source.splitlines(keepends=True)
+
+    for call_prefix, variable_name, filename in PLOT_EXPORTS:
+        assign_and_export_plot(
+            notebook,
+            call_prefix,
+            variable_name,
+            filename,
+        )
+
+    export_existing_figure(
+        notebook,
+        "rank1_reduced_summary_figure =",
+        "rank1_reduced_summary_figure",
+        "rank1-reduced-summary.pdf",
+    )
+    export_existing_figure(
+        notebook,
+        "paper_mode_time_course_figure,",
+        "paper_mode_time_course_figure",
+        "rank2-paper-latent-sweeps.pdf",
+    )
+    assign_and_export_plot(
+        notebook,
+        "plotting.plot_delay_mse(\n",
+        "rank2_paper_delay_generalization_figure",
+        "rank2-paper-delay-generalization.pdf",
+        occurrence=1,
+    )
 
     output_path.write_text(json.dumps(notebook, indent=1) + "\n")
 

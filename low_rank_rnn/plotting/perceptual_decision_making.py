@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
 from matplotlib.figure import SubFigure
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 import numpy as np
 from jaxtyping import Integer, Real
@@ -64,14 +65,18 @@ def plot_decision_trials(
 
     axes[0].legend(
         handles=(
-            Patch(label="stimulus", **STIMULUS_WINDOW_STYLE),
-            Patch(label="decision", **DECISION_WINDOW_STYLE),
+            Line2D([], [], color=CHOICE_COLORS[-1], label="left choice (-1)"),
+            Line2D([], [], color=CHOICE_COLORS[1], label="right choice (+1)"),
+            Patch(label="stimulus window", **STIMULUS_WINDOW_STYLE),
+            Patch(label="decision window", **DECISION_WINDOW_STYLE),
         ),
-        loc="upper left",
+        loc="upper center",
+        ncol=4,
+        frameon=True,
     )
     axes[-1].set_xlabel("time step")
-    fig.suptitle("Noisy decision trials: weak/strong and left/right examples")
-    fig.tight_layout()
+    fig.suptitle("Example decision trials")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
     return fig, axes
 
 
@@ -99,7 +104,7 @@ def plot_decision_summary(
     )
     axes[0].set(
         xlabel="training epoch",
-        ylabel="decision-window MSE",
+        ylabel="mean-squared error",
         title="Rank-one optimization",
     )
     axes[0].legend()
@@ -117,7 +122,7 @@ def plot_decision_summary(
     axes[1].axhline(0, color=COLORS["gray"], linewidth=0.9)
     axes[1].set(
         xlabel=r"mean evidence $\bar{\mu}$",
-        ylabel="mean final readout",
+        ylabel="network readout",
         title=f"Held-out decisions  |  accuracy = {accuracy:.1%}",
     )
     axes[1].legend()
@@ -228,5 +233,5 @@ def plot_output_comparison(
     axes.flat[0].legend()
     fig.supxlabel("time step")
     fig.supylabel("readout")
-    fig.suptitle("Full rank-one RNN and its Gaussian circuit")
+    fig.suptitle("Sample trajectories of RNN vs equivalent circuit")
     return fig, axes

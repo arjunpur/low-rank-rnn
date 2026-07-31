@@ -1,6 +1,9 @@
 """Project-wide Matplotlib styling and semantic colors."""
 
+from pathlib import Path
+
 import matplotlib as mpl
+from matplotlib.figure import Figure
 
 
 # A restrained, colorblind-safe palette based on Paul Tol's bright scheme.
@@ -126,3 +129,12 @@ STYLE = {
 def set_plot_style() -> None:
     """Apply the project style to all subsequent Matplotlib figures."""
     mpl.rcParams.update(STYLE)
+
+
+def save_report_figure(figure: Figure, filename: str) -> Path:
+    """Save a figure as a vector PDF for the LaTeX report."""
+    output_directory = Path("report/figures")
+    output_directory.mkdir(parents=True, exist_ok=True)
+    output_path = output_directory / filename
+    figure.savefig(output_path, format="pdf")
+    return output_path

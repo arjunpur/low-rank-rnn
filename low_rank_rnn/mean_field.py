@@ -14,6 +14,8 @@ _QUADRATURE_NODES, _QUADRATURE_WEIGHTS = hermgauss(40)
 _NORMAL_NODES = np.sqrt(2) * _QUADRATURE_NODES
 _NORMAL_WEIGHTS = _QUADRATURE_WEIGHTS / np.sqrt(np.pi)
 
+PAPER_WORKING_MEMORY_NAMES = ("I", "n_1", "n_2", "m_1", "m_2", "w")
+
 
 def _loading_indices(
     names: Sequence[str],
@@ -134,6 +136,25 @@ def simulate_gaussian_circuit(
         filtered_input += step_size * (-filtered_input + inputs[:, time])
 
     return outputs, kappa_history, filtered_history
+
+
+def paper_working_memory_gaussian(
+) -> tuple[tuple[str, ...], np.ndarray, np.ndarray]:
+    """Return the loading Gaussian for the paper's rank-two memory circuit."""
+    readout_residual = np.sqrt(16 - 2.8**2 - 2.2**2)
+    loading_transform = np.array(
+        (
+            (1.0, 0.0, 0.0, 0.0),
+            (0.5, 1.0, 0.0, 0.0),
+            (1.9, 0.0, 0.5, 0.0),
+            (0.0, 1.0, 0.0, 0.0),
+            (0.0, 0.0, 1.0, 0.0),
+            (0.0, 2.8, -2.2, readout_residual),
+        )
+    )
+    mean = np.zeros(len(PAPER_WORKING_MEMORY_NAMES))
+    covariance = loading_transform @ loading_transform.T
+    return PAPER_WORKING_MEMORY_NAMES, mean, covariance
 
 
 @typechecked

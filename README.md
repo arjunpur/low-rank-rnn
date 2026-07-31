@@ -1,52 +1,46 @@
-# Low-rank RNN
+# Low-rank RNNs
 
-This repository studies rank-one and rank-two recurrent neural networks on
-perceptual decision-making and parametric working-memory tasks.
+This repository explores how low-rank recurrent neural networks solve two
+simple cognitive tasks: perceptual decision-making and parametric working
+memory. The main goal is to connect what the trained networks do in latent
+space to the statistics of their connectivity vectors.
 
-`final.ipynb` is the complete, reproducible analysis. Older exploratory
-notebooks and scripts live in `archive/`; they are not part of the core library
-contract.
+The full analysis lives in [`final.ipynb`](final.ipynb). A written summary and
+the main figures are available in [`report/report.pdf`](report/report.pdf).
 
-## Library layout
+## Repository layout
 
-- `low_rank_rnn/model.py` — low-rank dynamics and structured initialization
-- `low_rank_rnn/training.py` — losses, training loops, and task accuracy
-- `low_rank_rnn/data/` — task definitions and trial generation
-- `low_rank_rnn/analysis.py` — model evaluation, connectivity, projections, and
-  fixed-point analysis
-- `low_rank_rnn/mean_field.py` — Gaussian equivalent circuits
-- `low_rank_rnn/plotting/` — all figure construction and shared visual style
+- `final.ipynb` contains the end-to-end experiments and analysis.
+- `low_rank_rnn/model.py` defines the low-rank RNN.
+- `low_rank_rnn/training.py` contains the training loop and metrics.
+- `low_rank_rnn/data/` generates the decision-making and working-memory tasks.
+- `low_rank_rnn/analysis.py` contains projections, connectivity analysis, PCA,
+  and fixed-point tools.
+- `low_rank_rnn/mean_field.py` implements the reduced Gaussian circuits.
+- `low_rank_rnn/plotting/` contains the plotting code used by the notebook.
+- `tests/` contains the unit tests.
+- `report/` contains the report source, generated figures, and final PDF.
 
-The modules have deliberately narrow jobs. The notebook sets experiment
-parameters and interprets results; reusable computation and presentation live
-in the library.
+## Setup
 
-## Usage
+The project uses Python 3.13 and [uv](https://docs.astral.sh/uv/) for dependency
+management.
 
-```python
-import numpy as np
-import torch
-
-from low_rank_rnn import analysis, plotting
-from low_rank_rnn.data import perceptual_decision_making as task
-from low_rank_rnn.model import LowRankRNN
-from low_rank_rnn.training import train_model
-
-plotting.set_plot_style()
-inputs, labels = task.generate_trials(
-    200,
-    rng=np.random.default_rng(2026),
-)
-
-torch.manual_seed(2026)
-model = LowRankRNN(n_units=128, rank=1)
-losses = train_model(
-    model,
-    torch.as_tensor(inputs, dtype=torch.float32),
-    torch.as_tensor(labels, dtype=torch.float32),
-)
-outputs, states = analysis.run_model(model, inputs)
+```bash
+uv sync
 ```
+
+## Running the project
+
+To reproduce the analysis, execute the main notebook from top to bottom:
+
+```bash
+uv run --with nbconvert jupyter nbconvert \
+  --execute --to notebook --inplace final.ipynb
+```
+
+The notebook trains several 512-unit networks, so a full run can take a while.
+It uses fixed random seeds to make the reported run reproducible.
 
 Run the tests with:
 
@@ -54,27 +48,30 @@ Run the tests with:
 uv run python -m unittest discover -s tests -v
 ```
 
-Execute the final notebook from top to bottom with:
+If you have a LaTeX installation with `latexmk`, rebuild the report PDF with:
 
 ```bash
-uv run jupyter nbconvert --execute --to notebook --inplace final.ipynb
+make -C report pdf
 ```
 
-## Shape-aware development
+## Key results
 
-Public numerical boundaries use `jaxtyping` with `beartype`. The optional
-Trickle setup records runtime values and tensor shapes:
+- The rank-one network solves the perceptual decision-making task with 100%
+  held-out sign accuracy. Its latent dynamics form two stable decision
+  attractors, separated by an unstable fixed point at the origin.
+- Ten networks sampled from the fitted rank-one loading distribution also
+  reach 100% accuracy. The corresponding one-dimensional mean-field circuit
+  reproduces the trained network's behavior.
+- The rank-two network solves the fixed-delay working-memory task with an MSE
+  of 0.000373, while the rank-one control cannot solve the task.
+- The rank-two solution is oscillatory and tied to the training delay. Its
+  performance varies strongly when that delay changes, so it does not learn a
+  robust memory mechanism.
+- Gaussian resampling is much less reliable for the rank-two network: the ten
+  sampled networks have a median MSE of 0.0839, and only one reaches the target
+  MSE below 0.005.
 
-```bash
-npm install -g trickle-cli@0.1.223
-uv sync
-source .venv/bin/activate
-trickle run --include low_rank_rnn python path/to/script.py
-```
-
-To observe every tested library path in one run, use the
-**Trickle: Run test suite** editor task or:
-
-```bash
-trickle run --include low_rank_rnn python -m unittest discover -s tests -v
-```
+In short, population-level connectivity statistics are enough to explain and
+reproduce the rank-one decision circuit. The working-memory task is more
+sensitive: a low training error does not guarantee robust latent dynamics or
+good behavior under resampling.

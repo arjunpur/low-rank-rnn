@@ -1,7 +1,9 @@
 """Fixed-delay parametric working-memory task."""
 
+from collections.abc import Sequence
+
 import numpy as np
-from jaxtyping import Float, Real
+from jaxtyping import Float, Integer, Real
 
 from low_rank_rnn._typing import typechecked
 
@@ -48,6 +50,21 @@ def make_fixed_delay_trials(
     inputs[:, second_start : second_start + second_steps] = amplitudes[:, 1, None]
     targets = (amplitudes[:, 0] - amplitudes[:, 1]).astype(np.float32)
     return inputs, targets
+
+
+@typechecked
+def make_delay_sweep_inputs(
+    frequency_pairs: Real[np.ndarray, "trial 2"],
+    delay_steps: Integer[np.ndarray, "delay"] | Sequence[int],
+) -> list[np.ndarray]:
+    """Build one trial batch for each blank delay between the stimuli."""
+    return [
+        make_fixed_delay_trials(
+            frequency_pairs,
+            second_start=FIXED_FIRST_WINDOW[1] + int(delay),
+        )[0]
+        for delay in delay_steps
+    ]
 
 
 @typechecked

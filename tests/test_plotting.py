@@ -99,7 +99,7 @@ class PlottingTests(unittest.TestCase):
         labels = np.array([-1, 1])
         trials = np.zeros((2, 3))
 
-        _, axes = plotting.plot_decision_trials(
+        figure, axes = plotting.plot_decision_trials(
             trials,
             labels,
             decision_steps=1,
@@ -110,6 +110,16 @@ class PlottingTests(unittest.TestCase):
                 axes[trial].lines[0].get_color(),
                 CHOICE_COLORS[int(choice)],
             )
+        self.assertEqual(figure.get_suptitle(), "Example decision trials")
+        self.assertEqual(
+            [text.get_text() for text in axes[0].get_legend().get_texts()],
+            [
+                "left choice (-1)",
+                "right choice (+1)",
+                "stimulus window",
+                "decision window",
+            ],
+        )
 
     def test_stimulus_trajectory_colorbar_labels_mean_stimulus(self) -> None:
         trajectories = np.array(
@@ -157,8 +167,9 @@ class PlottingTests(unittest.TestCase):
             num_components=2,
         )
 
-        self.assertEqual(axes[1].get_xlabel(), "PC1 (75.0% variance)")
-        self.assertEqual(axes[1].get_ylabel(), "PC2 (25.0% variance)")
+        self.assertEqual(axes[1].get_xlabel(), "PC1")
+        self.assertEqual(axes[1].get_ylabel(), "PC2")
+        self.assertEqual(axes[1].get_title(), "Projection in PCA space")
         self.assertEqual(figure.axes[2].get_ylabel(), r"mean stimulus, $\bar{u}$")
         self.assertNotEqual(
             axes[1].lines[0].get_color(),
@@ -180,6 +191,7 @@ class PlottingTests(unittest.TestCase):
 
         self.assertEqual(axis.get_xlabel(), r"latent state, $\kappa$")
         self.assertEqual(axis.get_ylabel(), r"filtered input, $v$")
+        self.assertEqual(axis.get_title(), "Equivalent circuit trajectory")
 
     def test_fixed_point_plot_shows_energy_and_classified_minima(self) -> None:
         grid = np.linspace(-2, 2, 101)
@@ -200,7 +212,7 @@ class PlottingTests(unittest.TestCase):
                 "Unstable fixed point",
             ],
         )
-        self.assertEqual(axis.get_title(), "Fixed-point energy")
+        self.assertEqual(axis.get_title(), "Fixed point minimization")
         self.assertEqual(axis.get_yscale(), "log")
 
     def test_output_comparison_accepts_subfigure_axes(self) -> None:
@@ -219,6 +231,15 @@ class PlottingTests(unittest.TestCase):
 
         self.assertIs(returned_figure, subfigure)
         np.testing.assert_array_equal(returned_axes, axes)
+        self.assertEqual(
+            returned_figure.get_suptitle(),
+            "Sample trajectories of RNN vs equivalent circuit",
+        )
+
+    def test_reduced_system_accuracy_title(self) -> None:
+        _, axis = plotting.plot_reduced_system_accuracy(0.9, 0.85)
+
+        self.assertEqual(axis.get_title(), "Performance comparison")
 
     def test_accuracy_comparison_shows_every_network(self) -> None:
         sampled_accuracies = np.array([0.5, 0.75, 1.0])
@@ -359,31 +380,45 @@ class PlottingTests(unittest.TestCase):
             r"first stimulus frequency, $f_1$ (Hz)",
         )
 
-    def test_readout_coefficients_mark_the_trained_delay_and_ideal_weights(
-        self,
-    ) -> None:
-        delay_steps = np.arange(25, 105, 5)
-        coefficients = np.column_stack(
-            (
-                np.cos(np.linspace(0, np.pi, len(delay_steps))),
-                -np.ones(len(delay_steps)),
-            )
+    def test_circuit_trajectories_compare_each_system(self) -> None:
+        trajectories = np.zeros((2, 3, 4, 2))
+        trajectories[0, :, :, 0] = 1
+        trajectories[1, :, :, 1] = 1
+
+        figure, axes = plotting.plot_circuit_trajectories(
+            trajectories,
+            np.array((10.0, 22.0, 34.0)),
+            ("Fitted covariance", "Paper covariance"),
+            colorbar_label="first frequency (Hz)",
+            title="Circuit trajectories",
         )
 
-        _, axis = plotting.plot_readout_coefficients(
-            delay_steps,
-            coefficients,
-            trained_delay=50,
-            annotation_delays=(25, 50, 100),
+        self.assertEqual(axes.shape, (2,))
+        self.assertEqual(len(axes[0].lines), 3)
+        self.assertEqual(axes[1].get_title(), "Paper covariance")
+        self.assertEqual(figure.axes[-1].get_ylabel(), "first frequency (Hz)")
+
+    def test_regression_comparison_labels_metrics(self) -> None:
+        targets = np.array((-1.0, 0.0, 1.0))
+        predictions = np.vstack((targets, 0.5 * targets))
+
+        _, axes = plotting.plot_regression_comparison(
+            targets,
+            predictions,
+            ("Fitted covariance", "Paper covariance"),
+            mean_squared_errors=np.array((0.0, 0.1)),
+            r_squared_values=np.array((1.0, 0.5)),
+            title="Circuit accuracy",
         )
 
-        np.testing.assert_allclose(axis.lines[0].get_ydata(), coefficients[:, 0])
-        np.testing.assert_allclose(axis.lines[1].get_ydata(), coefficients[:, 1])
-        self.assertEqual(axis.lines[4].get_xdata(), [50, 50])
-        self.assertEqual(len(axis.texts), 4)
+        self.assertEqual(axes.shape, (2,))
         self.assertEqual(
-            axis.get_ylabel(),
-            r"fitted decision coefficient, $\beta_i$",
+            axes[1].get_title(),
+            "Paper covariance\nMSE=0.1000, $R^2$=0.500",
+        )
+        np.testing.assert_allclose(
+            axes[0].collections[0].get_offsets()[:, 1],
+            targets,
         )
 
     def test_delay_mse_marks_reference_and_recurrence_delays(self) -> None:
@@ -422,64 +457,58 @@ class PlottingTests(unittest.TestCase):
             ),
         )
 
-    def test_gaussian_pipeline_shows_every_sampled_network(self) -> None:
+    def test_mse_comparison_shows_every_sampled_network(self) -> None:
         sampled_mses = np.array((0.1, 0.2, 0.3))
 
-        _, axes = plotting.plot_gaussian_pipeline(
+        _, axis = plotting.plot_mse_comparison(
             0.001,
-            0.01,
             sampled_mses,
-            np.array((-1.0, 0.0, 1.0)),
-            np.array((-1.0, 0.0, 1.0)),
-            np.array((-0.8, 0.0, 0.8)),
             threshold=0.005,
-            title="Covariance pipeline",
-            score_label="MSE",
-            readout_title="Readouts",
+            title="Gaussian resampling",
         )
 
-        sampled_points = axes[0].collections[2]
+        trained_points, sampled_points = axis.collections[:2]
+        np.testing.assert_allclose(
+            trained_points.get_offsets()[:, 1],
+            [0.001],
+        )
         np.testing.assert_allclose(
             sampled_points.get_offsets()[:, 1],
             sampled_mses,
         )
         self.assertEqual(
-            tuple(label.get_text() for label in axes[0].get_xticklabels()),
+            tuple(label.get_text() for label in axis.get_xticklabels()),
+            ("Trained network", "Gaussian samples"),
+        )
+        self.assertEqual(axis.get_yscale(), "log")
+        self.assertEqual(axis.get_legend()._loc, 2)
+        self.assertIn(
+            "sample median: 0.2",
+            axis.get_legend_handles_labels()[1],
+        )
+
+    def test_circuit_mse_comparison_shows_all_three_systems(self) -> None:
+        values = np.array((0.001, 0.02, 0.03))
+
+        _, axis = plotting.plot_circuit_mse_comparison(
+            *values,
+            threshold=0.005,
+        )
+
+        np.testing.assert_allclose(
+            [collection.get_offsets()[0, 1] for collection in axis.collections],
+            values,
+        )
+        self.assertEqual(
+            tuple(label.get_text() for label in axis.get_xticklabels()),
             (
-                "source\ntrained RNN",
-                "full-covariance\nGaussian circuit",
-                "finite Gaussian-\nsampled RNNs",
+                "Source\ntrained RNN",
+                "Circuit with\nsource covariance",
+                "Circuit with\npaper parameters",
             ),
         )
-        np.testing.assert_allclose(
-            [
-                collection.get_offsets()[0, 1]
-                for collection in axes[0].collections[:2]
-            ],
-            (0.001, 0.01),
-        )
-        self.assertEqual(
-            axes[1].get_legend_handles_labels()[1],
-            [
-                "source trained RNN",
-                "full-covariance Gaussian circuit",
-            ],
-        )
-
-    def test_training_loss_labels_curriculum_stages(self) -> None:
-        _, axis = plotting.plot_training_loss(
-            np.linspace(0.01, 0.001, 6),
-            title="Curriculum",
-            stage_ends=(2, 4),
-            stage_labels=("short delays", "medium delays", "long delays"),
-        )
-
-        self.assertEqual(
-            tuple(label.get_text() for label in axis.texts),
-            ("short delays", "medium delays", "long delays"),
-        )
-        self.assertEqual(len(axis.lines), 3)
-
+        self.assertEqual(axis.get_yscale(), "log")
+        self.assertEqual(len(axis.texts), 3)
 
 if __name__ == "__main__":
     unittest.main()

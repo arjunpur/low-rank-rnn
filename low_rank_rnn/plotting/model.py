@@ -1,9 +1,9 @@
 """Plots for model analysis and low-dimensional dynamics."""
 
 from collections.abc import Mapping, Sequence
+from typing import Literal
 
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
 from matplotlib.figure import SubFigure
 from matplotlib.patches import Ellipse
 from matplotlib.ticker import MaxNLocator, PercentFormatter
@@ -30,11 +30,16 @@ def _plot_performance_comparison(
     baseline: float | None = None,
     baseline_label: str | None = None,
     value_format: str = "{:.1%}",
+    sample_summary: Literal["mean", "median"] = "mean",
     axis: plt.Axes | None = None,
 ) -> tuple[plt.Figure | SubFigure, plt.Axes]:
     sampled_values = np.asarray(sampled_values, dtype=float)
     sample_positions = np.linspace(0.86, 1.14, len(sampled_values))
-    sampled_mean = float(sampled_values.mean())
+    summary_value = float(
+        np.mean(sampled_values)
+        if sample_summary == "mean"
+        else np.median(sampled_values)
+    )
     owns_figure = axis is None
     fig, axis = (
         plt.subplots(figsize=(6.4, 4.2))
@@ -67,12 +72,15 @@ def _plot_performance_comparison(
         label=f"trained network: {value_format.format(trained_value)}",
     )
     axis.hlines(
-        sampled_mean,
+        summary_value,
         0.82,
         1.18,
         color=COLORS["purple"],
         linewidth=2.2,
-        label=f"sample mean: {value_format.format(sampled_mean)}",
+        label=(
+            f"sample {sample_summary}: "
+            f"{value_format.format(summary_value)}"
+        ),
     )
     if baseline is not None:
         axis.axhline(
@@ -87,6 +95,112 @@ def _plot_performance_comparison(
     axis.set_xlim(-0.35, 1.35)
     axis.set(ylabel=ylabel, title=title)
     axis.legend(loc="lower left")
+    if owns_figure:
+        fig.tight_layout()
+    return fig, axis
+
+
+@typechecked
+def plot_mse_comparison(
+    trained_mse: float,
+    sampled_mses: Real[np.ndarray, "sample"],
+    *,
+    threshold: float,
+    title: str = "Performance after Gaussian resampling",
+    axis: plt.Axes | None = None,
+) -> tuple[plt.Figure | SubFigure, plt.Axes]:
+    """Compare trained and Gaussian-sampled network regression errors."""
+    fig, axis = _plot_performance_comparison(
+        trained_mse,
+        sampled_mses,
+        ylabel="Mean squared error",
+        title=title,
+        baseline=threshold,
+        baseline_label=f"target = {threshold:g}",
+        value_format="{:.4g}",
+        sample_summary="median",
+        axis=axis,
+    )
+    axis.set_yscale("log")
+    axis.legend(loc="upper left")
+    return fig, axis
+
+
+@typechecked
+def plot_circuit_mse_comparison(
+    trained_mse: float,
+    fitted_circuit_mse: float,
+    paper_circuit_mse: float,
+    *,
+    threshold: float,
+    axis: plt.Axes | None = None,
+) -> tuple[plt.Figure | SubFigure, plt.Axes]:
+    """Compare fixed-delay MSE across the RNN and two reduced circuits."""
+    values = np.asarray(
+        (trained_mse, fitted_circuit_mse, paper_circuit_mse),
+        dtype=float,
+    )
+    labels = (
+        "Source\ntrained RNN",
+        "Circuit with\nsource covariance",
+        "Circuit with\npaper parameters",
+    )
+    colors = (COLORS["green"], COLORS["purple"], COLORS["gold"])
+    markers = ("D", "s", "o")
+    owns_figure = axis is None
+    fig, axis = (
+        plt.subplots(figsize=(7.2, 4.2))
+        if owns_figure
+        else (axis.figure, axis)
+    )
+
+    for position, value, color, marker in zip(
+        range(len(values)),
+        values,
+        colors,
+        markers,
+        strict=True,
+    ):
+        axis.scatter(
+            position,
+            value,
+            color=color,
+            marker=marker,
+            s=80,
+            zorder=3,
+        )
+        axis.annotate(
+            f"{value:.4g}",
+            (position, value),
+            xytext=(0, 8),
+            textcoords="offset points",
+            ha="center",
+            color=color,
+            fontsize=9,
+        )
+
+    axis.axhline(
+        trained_mse,
+        color=COLORS["green"],
+        linestyle="--",
+        linewidth=1.2,
+        label=f"trained network: {trained_mse:.4g}",
+    )
+    axis.axhline(
+        threshold,
+        color=COLORS["gray"],
+        linestyle=":",
+        linewidth=1,
+        label=f"target = {threshold:g}",
+    )
+    axis.set_yscale("log")
+    axis.set_xticks(range(len(labels)), labels=labels)
+    axis.set_xlim(-0.4, len(labels) - 0.6)
+    axis.set(
+        ylabel="Mean squared error",
+        title="Fixed-delay performance comparison",
+    )
+    axis.legend(loc="lower right")
     if owns_figure:
         fig.tight_layout()
     return fig, axis
@@ -146,7 +260,7 @@ def plot_reduced_system_accuracy(
     axis.yaxis.set_major_formatter(PercentFormatter(1.0))
     axis.set(
         ylabel="Decision accuracy",
-        title="Held-out perceptual decision performance",
+        title="Performance comparison",
     )
     if owns_figure:
         fig.tight_layout()
@@ -420,7 +534,7 @@ def plot_activity_trajectories_by_stimulus(
     _style_trajectory_axis(axis, trajectories)
     axis.set_title("Activity trajectories colored by mean stimulus")
     axis.set_xlabel(r"activity along $m$", loc="right")
-    axis.set_ylabel(r"activity along $I_\perp$", loc="top")
+    axis.set_ylabel(r"activity along $I$", loc="top")
     colorbar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=SIGNED_VALUE_CMAP),
         ax=axis,
@@ -440,7 +554,7 @@ def plot_reduced_system_trajectories(
         trajectories,
         mean_stimuli,
     )
-    axis.set_title("Equivalent one-dimensional system trajectories")
+    axis.set_title("Equivalent circuit trajectory")
     axis.set_xlabel(r"latent state, $\kappa$", loc="right")
     axis.set_ylabel(r"filtered input, $v$", loc="top")
     return fig, axis
@@ -576,23 +690,6 @@ def _plot_explained_variance(
 
 
 @typechecked
-def plot_explained_variance(
-    explained_variance: Real[np.ndarray, "component"],
-    *,
-    num_components: int = 6,
-) -> tuple[plt.Figure, plt.Axes]:
-    """Plot PCA explained variance for the leading components."""
-    fig, axis = plt.subplots(figsize=(7, 3.8))
-    _plot_explained_variance(
-        axis,
-        explained_variance,
-        num_components=num_components,
-    )
-    fig.tight_layout()
-    return fig, axis
-
-
-@typechecked
 def plot_pca_summary(
     explained_variance: Real[np.ndarray, "component"],
     projected_trajectories: Real[np.ndarray, "trial time component"],
@@ -637,9 +734,9 @@ def plot_pca_summary(
     axes[1].axhline(0, **REFERENCE_LINE_STYLE)
     axes[1].axvline(0, **REFERENCE_LINE_STYLE)
     axes[1].set(
-        xlabel=f"PC1 ({100 * explained_variance[0]:.1f}% variance)",
-        ylabel=f"PC2 ({100 * explained_variance[1]:.1f}% variance)",
-        title="Trial trajectories in PCA space",
+        xlabel="PC1",
+        ylabel="PC2",
+        title="Projection in PCA space",
     )
     axes[1].grid(False)
     colorbar = fig.colorbar(
@@ -672,7 +769,7 @@ def plot_fixed_points(
     axis.set(
         xlabel=r"$\kappa$",
         ylabel=r"$q(\kappa)$",
-        title="Fixed-point energy",
+        title="Fixed point minimization",
     )
     stable = slopes < 0
     marker_styles = (
@@ -703,69 +800,3 @@ def plot_fixed_points(
         )
     axis.legend()
     return fig, axis
-
-
-@typechecked
-def plot_training_loss(
-    losses: Real[np.ndarray, "epoch"] | Sequence[float],
-    *,
-    title: str,
-    stage_ends: Sequence[int] = (),
-    stage_labels: Sequence[str] = (),
-) -> tuple[plt.Figure, plt.Axes]:
-    """Plot training loss with optional curriculum boundaries."""
-    losses = np.asarray(losses)
-    if stage_labels and len(stage_labels) != len(stage_ends) + 1:
-        raise ValueError("stage_labels must name every curriculum stage")
-
-    fig, axis = plt.subplots(figsize=(6.5, 3.2), constrained_layout=True)
-    axis.semilogy(np.arange(1, len(losses) + 1), losses)
-    for stage_end in stage_ends:
-        axis.axvline(stage_end + 0.5, **REFERENCE_LINE_STYLE)
-    if stage_labels:
-        boundaries = (
-            0.5,
-            *(stage_end + 0.5 for stage_end in stage_ends),
-            len(losses) + 0.5,
-        )
-        for start, stop, label in zip(
-            boundaries[:-1],
-            boundaries[1:],
-            stage_labels,
-            strict=True,
-        ):
-            axis.text(
-                (start + stop) / 2,
-                0.97,
-                label,
-                transform=axis.get_xaxis_transform(),
-                ha="center",
-                va="top",
-                color=COLORS["gray"],
-                fontsize=8,
-            )
-    axis.set(xlabel="epoch", ylabel="decision MSE", title=title)
-    return fig, axis
-
-
-@typechecked
-def plot_covariance_comparison(
-    names: Sequence[str],
-    first: Real[np.ndarray, "coordinate coordinate"],
-    second: Real[np.ndarray, "coordinate coordinate"],
-    *,
-    titles: tuple[str, str],
-) -> tuple[plt.Figure, np.ndarray]:
-    """Compare two loading covariance matrices on one color scale."""
-    first, second = np.asarray(first), np.asarray(second)
-    limit = max(float(np.max(np.abs(first))), float(np.max(np.abs(second))))
-    norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8), constrained_layout=True)
-    for axis, covariance, title in zip(axes, (first, second), titles):
-        image = axis.imshow(covariance, cmap=COVARIANCE_CMAP, norm=norm)
-        axis.set_xticks(range(len(names)), labels=names, rotation=35, ha="right")
-        axis.set_yticks(range(len(names)), labels=names)
-        axis.set_title(title)
-    fig.colorbar(image, ax=axes, label="covariance", shrink=0.78)
-    fig.suptitle("Loading covariance")
-    return fig, axes

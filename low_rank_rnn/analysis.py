@@ -1,8 +1,6 @@
 """Analysis helpers for trained low-rank RNNs."""
 
-from collections.abc import Callable, Mapping, Sequence
-from copy import deepcopy
-
+from collections.abc import Callable, Iterable, Mapping, Sequence
 import numpy as np
 from scipy.optimize import minimize_scalar
 import torch
@@ -72,6 +70,23 @@ def network_regression_mses(
 
 
 @typechecked
+def regression_mses_by_condition(
+    simulate_outputs: Callable[[np.ndarray], np.ndarray],
+    input_batches: Iterable[np.ndarray],
+    targets: Real[np.ndarray, "batch"],
+    *,
+    decision_steps: int,
+) -> Float[np.ndarray, "condition"]:
+    """Score one output simulator across a sequence of input conditions."""
+    scores = []
+    for inputs in input_batches:
+        outputs = simulate_outputs(np.asarray(inputs))
+        decisions = decision_values(outputs, decision_steps)
+        scores.append(regression_metrics(decisions, targets)[0])
+    return np.asarray(scores)
+
+
+@typechecked
 def principal_component_analysis(
     states: Real[np.ndarray, "batch time unit"],
 ) -> tuple[
@@ -92,15 +107,6 @@ def principal_component_analysis(
     components = eigenvectors[:, order]
     projected = (centered @ components).reshape(states.shape)
     return eigenvalues / eigenvalues.sum(), components, projected
-
-
-@typechecked
-def explained_variance(
-    states: Real[np.ndarray, "batch time unit"],
-) -> Float[np.ndarray, "unit"]:
-    """Return covariance-PCA explained-variance fractions."""
-    variance, _, _ = principal_component_analysis(states)
-    return variance
 
 
 @typechecked
@@ -272,38 +278,18 @@ def connectivity_overlap(
     return n.T @ m / len(m)
 
 
+@torch.no_grad()
 @typechecked
-def _svd_connectivity_basis(
-    model: LowRankRNN,
-) -> tuple[Float[np.ndarray, "unit rank"], Float[np.ndarray, "unit rank"]]:
-    """Return equivalent connectivity factors in the canonical SVD basis."""
-    m = model.m.detach().cpu().numpy().astype(float)
-    n = model.n.detach().cpu().numpy().astype(float)
-    m_basis, m_factor = np.linalg.qr(m)
-    n_basis, n_factor = np.linalg.qr(n)
-    left, values, right = np.linalg.svd(m_factor @ n_factor.T)
-    scale = np.sqrt(values)
-    return m_basis @ left * scale, n_basis @ right.T * scale
+def orient_rank_one_factors(model: LowRankRNN) -> None:
+    """Orient rank-one factors so the recurrent mode aligns with the readout."""
+    if model.m.shape[1] != 1:
+        raise ValueError("model must have rank 1")
 
-
-def svd_canonical_model(model: LowRankRNN) -> tuple[LowRankRNN, float]:
-    """Copy a model into its SVD connectivity basis."""
-    canonical_m, canonical_n = _svd_connectivity_basis(model)
-    canonical = deepcopy(model)
-    with torch.no_grad():
-        canonical.m.copy_(torch.as_tensor(canonical_m, dtype=canonical.m.dtype))
-        canonical.n.copy_(torch.as_tensor(canonical_n, dtype=canonical.n.dtype))
-    canonical.eval()
-
-    original = (
-        model.m.detach().cpu().numpy()
-        @ model.n.detach().cpu().numpy().T
-    )
-    reconstructed = canonical_m @ canonical_n.T
-    error = float(
-        np.linalg.norm(reconstructed - original) / np.linalg.norm(original)
-    )
-    return canonical, error
+    centered_mode = model.m[:, 0] - model.m[:, 0].mean()
+    centered_readout = model.w - model.w.mean()
+    if torch.dot(centered_mode, centered_readout) < 0:
+        model.m[:, 0].mul_(-1)
+        model.n[:, 0].mul_(-1)
 
 
 @typechecked

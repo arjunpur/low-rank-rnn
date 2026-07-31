@@ -267,7 +267,7 @@ def plot_latent_plane(
     axis.set(
         xlabel=r"$\kappa_1$",
         ylabel=r"$\kappa_2$",
-        title=r"Population trajectories in the $m_1$–$m_2$ plane",
+        title="RNN latent trajectories under isolated stimuli",
     )
     colorbar = fig.colorbar(
         plt.cm.ScalarMappable(norm=norm, cmap=FREQUENCY_CMAP),
@@ -280,102 +280,121 @@ def plot_latent_plane(
 
 
 @typechecked
-def plot_readout_coefficients(
-    delay_steps: Real[np.ndarray, "delay"],
-    coefficients: Real[np.ndarray, "delay 2"],
+def plot_circuit_trajectories(
+    trajectories: Real[np.ndarray, "system frequency time 2"],
+    frequencies: Real[np.ndarray, "frequency"],
+    system_labels: Sequence[str],
     *,
-    trained_delay: RealNumber,
-    annotation_delays: Sequence[RealNumber] = (),
-) -> tuple[plt.Figure, plt.Axes]:
-    """Show how decision-time readout weights change with the delay."""
-    delay_steps = np.asarray(delay_steps)
-    coefficients = np.asarray(coefficients)
-    fig, axis = plt.subplots(figsize=(8.5, 4.8), constrained_layout=True)
-    marker_interval = max(1, len(delay_steps) // 10)
+    colorbar_label: str,
+    title: str,
+) -> tuple[plt.Figure, np.ndarray]:
+    """Compare rank-two trajectories from several equivalent circuits."""
+    trajectories = np.asarray(trajectories)
+    frequencies = np.asarray(frequencies)
+    if len(system_labels) != len(trajectories):
+        raise ValueError("system_labels must match trajectories")
 
-    axis.plot(
-        delay_steps,
-        coefficients[:, 0],
-        color=COLORS["blue"],
-        marker="o",
-        markevery=marker_interval,
-        label=r"first stimulus: $\beta_1$",
+    norm = plt.Normalize(frequencies.min(), frequencies.max())
+    fig, axes = plt.subplots(
+        1,
+        len(trajectories),
+        figsize=(5.5 * len(trajectories), 4.8),
+        constrained_layout=True,
+        squeeze=False,
     )
-    axis.plot(
-        delay_steps,
-        coefficients[:, 1],
-        color=COLORS["gold"],
-        linestyle="--",
-        marker="s",
-        markerfacecolor="white",
-        markevery=marker_interval,
-        label=r"second stimulus: $\beta_2$",
+    axes = axes.ravel()
+    for axis, system_trajectories, label in zip(
+        axes,
+        trajectories,
+        system_labels,
+        strict=True,
+    ):
+        for frequency, trajectory in zip(
+            frequencies,
+            system_trajectories,
+            strict=True,
+        ):
+            axis.plot(
+                trajectory[:, 0],
+                trajectory[:, 1],
+                color=FREQUENCY_CMAP(norm(frequency)),
+                linewidth=1.8,
+            )
+        axis.scatter(0, 0, color="black", marker="x", label="initial state")
+        axis.set(
+            xlabel=r"$\kappa_1$",
+            ylabel=r"$\kappa_2$",
+            title=label,
+        )
+        axis.set_aspect("equal", adjustable="datalim")
+
+    axes[0].legend(loc="best")
+    colorbar = fig.colorbar(
+        plt.cm.ScalarMappable(norm=norm, cmap=FREQUENCY_CMAP),
+        ax=axes,
+        pad=0.02,
     )
-    for ideal_value in (-1, 1):
-        axis.axhline(
-            ideal_value,
+    colorbar.set_label(colorbar_label)
+    fig.suptitle(title)
+    return fig, axes
+
+
+@typechecked
+def plot_regression_comparison(
+    targets: Real[np.ndarray, "trial"],
+    predictions: Real[np.ndarray, "system trial"],
+    system_labels: Sequence[str],
+    *,
+    mean_squared_errors: Real[np.ndarray, "system"],
+    r_squared_values: Real[np.ndarray, "system"],
+    title: str,
+) -> tuple[plt.Figure, np.ndarray]:
+    """Compare predicted and target values for several systems."""
+    targets = np.asarray(targets)
+    predictions = np.asarray(predictions)
+    if len(system_labels) != len(predictions):
+        raise ValueError("system_labels must match predictions")
+
+    limit = 1.05 * max(
+        np.abs(targets).max(),
+        np.abs(predictions).max(),
+    )
+    fig, axes = plt.subplots(
+        1,
+        len(predictions),
+        figsize=(5.25 * len(predictions), 4.6),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    axes = axes.ravel()
+    for axis, system_predictions, mse, r_squared, label in zip(
+        axes,
+        predictions,
+        mean_squared_errors,
+        r_squared_values,
+        system_labels,
+        strict=True,
+    ):
+        axis.scatter(targets, system_predictions, alpha=0.75)
+        axis.plot(
+            (-limit, limit),
+            (-limit, limit),
             color=COLORS["gray"],
             linestyle="--",
-            linewidth=1,
-            zorder=0,
         )
-
-    axis.axvline(
-        trained_delay,
-        color=COLORS["gray"],
-        linestyle=":",
-        linewidth=1.2,
-    )
-    axis.text(
-        trained_delay,
-        0.48,
-        f"trained delay\n{trained_delay:g} steps",
-        transform=axis.get_xaxis_transform(),
-        ha="center",
-        va="center",
-        color=COLORS["gray"],
-        fontsize=9,
-        bbox={
-            "facecolor": "white",
-            "edgecolor": "none",
-            "alpha": 0.85,
-            "pad": 1.5,
-        },
-    )
-
-    for delay in annotation_delays:
-        index = int(np.argmin(np.abs(delay_steps - delay)))
-        axis.scatter(
-            delay_steps[index],
-            coefficients[index, 0],
-            color=COLORS["blue"],
-            edgecolor="white",
-            linewidth=0.8,
-            s=48,
-            zorder=4,
+        axis.set(
+            xlim=(-limit, limit),
+            ylim=(-limit, limit),
+            xlabel="target",
+            ylabel="circuit decision",
+            title=f"{label}\nMSE={mse:.4f}, $R^2$={r_squared:.3f}",
         )
-        axis.annotate(
-            f"{coefficients[index, 0]:+.2f}",
-            xy=(delay_steps[index], coefficients[index, 0]),
-            xytext=(0, 8),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            color=COLORS["blue"],
-            fontsize=9,
-        )
+        axis.set_aspect("equal", adjustable="box")
 
-    axis.set(
-        xlabel="blank delay between stimuli (time steps)",
-        ylabel=r"fitted decision coefficient, $\beta_i$",
-        title=(
-            "Oscillatory RNN stimulus contributions by delay\n"
-            r"Fit over all 49 conditions: "
-            r"$\bar{z}=a+\beta_1\tilde{f}_1+\beta_2\tilde{f}_2$"
-        ),
-    )
-    axis.legend(loc="upper right")
-    return fig, axis
+    fig.suptitle(title)
+    return fig, axes
 
 
 @typechecked
@@ -503,114 +522,3 @@ def plot_delay_mse(
         axis.set_xticks(x_ticks)
     axis.set_title(title, loc="left")
     return fig, axis
-
-
-@typechecked
-def plot_gaussian_pipeline(
-    trained_mse: float,
-    full_covariance_mse: float,
-    sampled_mses: Real[np.ndarray, "sample"],
-    targets: Real[np.ndarray, "trial"],
-    trained_decisions: Real[np.ndarray, "trial"],
-    full_covariance_decisions: Real[np.ndarray, "trial"],
-    *,
-    threshold: float,
-    title: str,
-    score_label: str,
-    readout_title: str,
-) -> tuple[plt.Figure, np.ndarray]:
-    """Compare a trained RNN, its Gaussian circuit, and finite samples."""
-    sampled_mses = np.asarray(sampled_mses)
-    categories = (
-        "source\ntrained RNN",
-        "full-covariance\nGaussian circuit",
-        "finite Gaussian-\nsampled RNNs",
-    )
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)
-    for position, score, color, marker, label in (
-        (0, trained_mse, COLORS["blue"], "D", "source trained RNN"),
-        (
-            1,
-            full_covariance_mse,
-            COLORS["purple"],
-            "s",
-            "full-covariance Gaussian circuit",
-        ),
-    ):
-        axes[0].scatter(
-            position,
-            score,
-            color=color,
-            marker=marker,
-            s=70,
-            zorder=3,
-            label=label,
-        )
-    sample_positions = 2 + np.linspace(-0.16, 0.16, len(sampled_mses))
-    axes[0].scatter(
-        sample_positions,
-        sampled_mses,
-        color=COLORS["gray"],
-        edgecolor="white",
-        linewidth=0.5,
-        s=48,
-        zorder=3,
-    )
-    axes[0].plot(
-        (sample_positions.min(), sample_positions.max()),
-        (np.median(sampled_mses),) * 2,
-        color=COLORS["gray"],
-        linewidth=2.5,
-        label=f"finite-sample median (n={len(sampled_mses)})",
-    )
-    axes[0].axhline(
-        threshold,
-        **REFERENCE_LINE_STYLE,
-        label=f"target = {threshold:g}",
-    )
-    axes[0].set_yscale("log")
-    axes[0].set_xticks(range(len(categories)), labels=categories)
-    axes[0].set(ylabel=score_label, title="Task performance")
-    axes[0].legend()
-
-    for decisions, color, marker, label in (
-        (trained_decisions, COLORS["blue"], "o", "source trained RNN"),
-        (
-            full_covariance_decisions,
-            COLORS["purple"],
-            "s",
-            "full-covariance Gaussian circuit",
-        ),
-    ):
-        axes[1].scatter(
-            targets,
-            decisions,
-            color=color,
-            marker=marker,
-            s=34,
-            alpha=0.75,
-            label=label,
-        )
-    limit = 1.05 * max(
-        1.0,
-        np.max(np.abs(targets)),
-        np.max(np.abs(trained_decisions)),
-        np.max(np.abs(full_covariance_decisions)),
-    )
-    axes[1].plot(
-        (-limit, limit),
-        (-limit, limit),
-        color=COLORS["gray"],
-        linestyle="--",
-    )
-    axes[1].set(
-        xlim=(-limit, limit),
-        ylim=(-limit, limit),
-        xlabel="target",
-        ylabel="decision",
-        title=readout_title,
-    )
-    axes[1].set_aspect("equal", adjustable="box")
-    axes[1].legend()
-    fig.suptitle(title)
-    return fig, axes

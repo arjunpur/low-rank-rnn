@@ -64,6 +64,18 @@ class WorkingMemoryDataTests(unittest.TestCase):
         )
         np.testing.assert_allclose(targets, amplitudes[:, 0] - amplitudes[:, 1])
 
+    def test_delay_sweep_inputs_move_the_second_stimulus(self) -> None:
+        pairs = np.array(((10, 34),))
+
+        inputs = working_memory.make_delay_sweep_inputs(
+            pairs,
+            np.array((20, 30)),
+        )
+
+        self.assertEqual([batch.shape[1] for batch in inputs], [51, 61])
+        self.assertTrue(np.all(inputs[0][:, 31:42] != 0))
+        self.assertTrue(np.all(inputs[1][:, 41:52] != 0))
+
 class TrainingTests(unittest.TestCase):
     def test_decision_loss_uses_only_the_final_window(self) -> None:
         outputs = torch.tensor([[0.0, 1.0, 2.0, 3.0]])
@@ -222,24 +234,6 @@ class AnalysisTests(unittest.TestCase):
         np.testing.assert_allclose(first["a"], second["a"])
         np.testing.assert_allclose(first_covariance, second_covariance)
 
-    def test_svd_canonical_model_preserves_connectivity(self) -> None:
-        torch.manual_seed(4)
-        model = LowRankRNN(32, rank=2)
-
-        canonical, error = analysis.svd_canonical_model(model)
-
-        self.assertLess(error, 1e-6)
-        self.assertAlmostEqual(
-            float(canonical.m[:, 0].detach() @ canonical.m[:, 1].detach()),
-            0.0,
-            places=5,
-        )
-        self.assertAlmostEqual(
-            float(canonical.n[:, 0].detach() @ canonical.n[:, 1].detach()),
-            0.0,
-            places=5,
-        )
-
     def test_activity_projection_uses_m_and_orthogonal_input_axes(self) -> None:
         model = LowRankRNN(2)
         with torch.no_grad():
@@ -271,10 +265,35 @@ class AnalysisTests(unittest.TestCase):
             projected[..., 1],
             0,
         )
-        np.testing.assert_allclose(
-            analysis.explained_variance(states),
-            variance,
+    def test_regression_mses_by_condition_scores_each_input_batch(self) -> None:
+        inputs = (
+            np.array(((-1.0, -1.0), (1.0, 1.0))),
+            np.zeros((2, 2)),
         )
+
+        scores = analysis.regression_mses_by_condition(
+            lambda values: values,
+            inputs,
+            np.array((-1.0, 1.0)),
+            decision_steps=1,
+        )
+
+        np.testing.assert_allclose(scores, (0.0, 1.0))
+
+    def test_rank_one_orientation_preserves_connectivity(self) -> None:
+        model = LowRankRNN(3)
+        with torch.no_grad():
+            model.m[:, 0].copy_(torch.tensor((-1.0, 0.0, 1.0)))
+            model.n[:, 0].copy_(torch.tensor((1.0, 2.0, 3.0)))
+            model.w.copy_(torch.tensor((1.0, 0.0, -1.0)))
+        connectivity = model.m @ model.n.T
+
+        analysis.orient_rank_one_factors(model)
+
+        torch.testing.assert_close(model.m @ model.n.T, connectivity)
+        centered_mode = model.m[:, 0] - model.m[:, 0].mean()
+        centered_readout = model.w - model.w.mean()
+        self.assertGreaterEqual(torch.dot(centered_mode, centered_readout), 0)
 
     def test_fixed_point_search_classifies_a_double_well_flow(self) -> None:
         grid, flow, points, slopes = analysis.find_fixed_points_1d(
@@ -313,6 +332,29 @@ class MeanFieldTests(unittest.TestCase):
         self.assertEqual(kappa.shape, (3, 4, 2))
         self.assertEqual(filtered.shape, (3, 4))
         np.testing.assert_allclose(outputs, 0)
+
+    def test_paper_working_memory_gaussian_has_reported_couplings(self) -> None:
+        names, mean, covariance = mean_field.paper_working_memory_gaussian()
+
+        couplings = analysis.named_covariances(
+            names,
+            covariance,
+            (
+                ("n_1", "m_1"),
+                ("n_2", "m_2"),
+                ("n_1", "I"),
+                ("n_2", "I"),
+                ("m_1", "w"),
+                ("m_2", "w"),
+            ),
+        )
+
+        np.testing.assert_allclose(mean, 0)
+        np.testing.assert_allclose(
+            tuple(couplings.values()),
+            (1.0, 0.5, 0.5, 1.9, 2.8, -2.2),
+        )
+        self.assertGreaterEqual(np.linalg.eigvalsh(covariance).min(), -1e-10)
 
 if __name__ == "__main__":
     unittest.main()
