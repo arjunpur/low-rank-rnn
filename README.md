@@ -6,7 +6,8 @@ memory. The main goal is to connect what the trained networks do in latent
 space to the statistics of their connectivity vectors.
 
 The full analysis lives in [`final.ipynb`](final.ipynb). A written summary and
-the main figures are available in [`report/report.pdf`](report/report.pdf).
+the main figures are available in the
+[report (PDF)](https://arjunpuri.io/projects/low-rank-rnn-report.pdf).
 
 ## Repository layout
 
@@ -19,7 +20,6 @@ the main figures are available in [`report/report.pdf`](report/report.pdf).
 - `low_rank_rnn/equivalent_circuit.py` implements the reduced Gaussian circuits.
 - `low_rank_rnn/plotting/` contains the plotting code used by the notebook.
 - `tests/` contains the unit tests.
-- `report/` contains the report source, generated figures, and final PDF.
 
 ## Setup
 
@@ -46,12 +46,6 @@ Run the tests with:
 
 ```bash
 uv run python -m unittest discover -s tests -v
-```
-
-If you have a LaTeX installation with `latexmk`, rebuild the report PDF with:
-
-```bash
-make -C report pdf
 ```
 
 ## Key results
